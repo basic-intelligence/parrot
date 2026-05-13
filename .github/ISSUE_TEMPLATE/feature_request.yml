@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an improvement or new feature for Parrot.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Parrot to do?
+      description: Describe the feature, problem, or use case.
+      placeholder: Parrot could...
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Extra context
+      description: Screenshots, examples, links, or alternatives if useful.

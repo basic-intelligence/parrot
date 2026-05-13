@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-hotkey-monitor-enabled"
+description = "Enables the set_hotkey_monitor_enabled command without any pre-configured scope."
+commands.allow = ["set_hotkey_monitor_enabled"]
+
+[[permission]]
+identifier = "deny-set-hotkey-monitor-enabled"
+description = "Denies the set_hotkey_monitor_enabled command without any pre-configured scope."
+commands.deny = ["set_hotkey_monitor_enabled"]

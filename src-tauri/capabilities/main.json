@@ -1,0 +1,61 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Main settings window capability for Parrot.",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-center",
+    "core:window:allow-set-size",
+    "updater:default",
+    "process:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://github.com/basic-intelligence/parrot"
+        },
+        {
+          "url": "https://github.com/basic-intelligence/parrot/issues/new/choose"
+        },
+        {
+          "url": "https://github.com/basic-intelligence/parrot/issues/new?template=bug_report.yml"
+        },
+        {
+          "url": "https://github.com/basic-intelligence/parrot/issues/new?template=feature_request.yml"
+        },
+        {
+          "url": "https://github.com/basic-intelligence/parrot/blob/main/CONTRIBUTING.md"
+        },
+        {
+          "url": "https://github.com/basic-intelligence/parrot/blob/main/LICENSE"
+        },
+        {
+          "url": "https://github.com/basic-intelligence/parrot/blob/main/PRIVACY.md"
+        },
+        {
+          "url": "https://github.com/basic-intelligence/parrot/blob/main/THIRD_PARTY_LICENSES.md"
+        },
+        {
+          "url": "mailto:richard@basic.in?subject=Parrot%20feedback"
+        }
+      ]
+    },
+    "allow-get-app-snapshot",
+    "allow-save-settings",
+    "allow-set-launch-at-login",
+    "allow-download-model",
+    "allow-delete-model",
+    "allow-warm-models",
+    "allow-start-test-dictation",
+    "allow-stop-test-dictation",
+    "allow-set-hotkey-monitor-enabled",
+    "allow-capture-shortcut",
+    "allow-permission-statuses",
+    "allow-request-permission",
+    "allow-save-recording-result",
+    "allow-delete-history-item",
+    "allow-clear-history"
+  ]
+}

@@ -1,0 +1,87 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local
+
+# Logs and diagnostics
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor / workspace local state
+.idea/
+.vscode/
+*.code-workspace
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+.vite-temp/
+
+# Tauri / Rust
+src-tauri/target/
+src-tauri/gen/
+src-tauri/.tauri/
+**/*.rs.bk
+
+# Generated Tauri sidecar binaries. Keep the directory placeholder.
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+
+# Swift Package Manager
+native-core/.build/
+native-core/macos/.build-*/
+native-core/.vendor/
+native-core/**/.vendor/
+native-core/.swiftpm/
+native-core/macos/.swiftpm/xcode/
+.build/
+.swiftpm/
+
+# Xcode local state and Apple build artifacts
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xcodeproj/
+*.xcworkspace/
+*.xcarchive/
+*.xcresult/
+*.dSYM/
+*.app
+*.dmg
+
+# Local model caches / large ML artifacts
+models/
+whisper-models/
+*.gguf
+*.mlmodel
+*.mlmodelc
+*.mlpackage
+*.coremlmodel
+
+# Coverage and temporary files
+coverage/
+.nyc_output/
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+*.profraw
+*.profdata
+
+# Dev help
+DEVELOPMENT.md
+scripts/dev-fresh-install-macos.sh

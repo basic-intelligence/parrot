@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>CFBundleName</key>
+    <string>Parrot</string>
+    <key>CFBundleDisplayName</key>
+    <string>Parrot</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Parrot records your voice to transcribe dictation locally.</string>
+    <key>NSInputMonitoringUsageDescription</key>
+    <string>Parrot Core listens for your configured shortcut while you use other apps.</string>
+  </dict>
+</plist>

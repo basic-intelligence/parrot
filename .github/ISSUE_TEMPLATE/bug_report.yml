@@ -1,0 +1,47 @@
+name: Bug report
+description: Report something that is not working correctly in Parrot.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the bug and what you expected instead.
+      placeholder: Parrot did...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Optional, but helpful.
+      placeholder: |
+        1. Open Parrot
+        2. ...
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Parrot version
+      placeholder: "0.1.0"
+    validations:
+      required: false
+
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Optional. Include macOS version, Apple Silicon/Intel, and install source if relevant.
+      placeholder: "macOS 15.5, Apple Silicon, GitHub Release DMG"
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Extra context
+      description: Logs, screenshots, recordings, transcripts, or examples if useful.

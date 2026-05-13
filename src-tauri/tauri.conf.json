@@ -1,0 +1,96 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Parrot",
+  "identifier": "in.basic.parrot",
+  "build": {
+    "beforeDevCommand": "npm run build:core:mac && npm run dev:ui",
+    "beforeBuildCommand": "swift scripts/render-dmg-background.swift src-tauri/assets/dmg-background.png && npm run build:core:mac && npm run build:ui",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Parrot",
+        "width": 920,
+        "height": 680,
+        "visible": false,
+        "resizable": true,
+        "center": true
+      },
+      {
+        "label": "recording",
+        "url": "recording.html",
+        "title": "Parrot Recording",
+        "width": 148,
+        "height": 36,
+        "visible": false,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "focusable": false,
+        "skipTaskbar": true,
+        "visibleOnAllWorkspaces": true,
+        "focus": false
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost",
+        "img-src": "'self' asset: http://asset.localhost data:",
+        "style-src": "'self' 'unsafe-inline'"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.3",
+      "entitlements": "./ParrotCore.entitlements",
+      "files": {
+        "Helpers/Parrot.app": "./binaries/Parrot.app"
+      },
+      "dmg": {
+        "background": "assets/dmg-background.png",
+        "windowSize": {
+          "width": 760,
+          "height": 560
+        },
+        "appPosition": {
+          "x": 166,
+          "y": 292
+        },
+        "applicationFolderPosition": {
+          "x": 594,
+          "y": 292
+        }
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc1Mjc4MjlCODJGMzIzOTcKUldTWEkvT0NtNEluZFlVdDFQUmRLVU9RdUV1U0FZZm8ycUtjbTFQTytZYVpmOGJBWm51MGVIZTAK",
+      "endpoints": [
+        "https://github.com/basic-intelligence/parrot/releases/latest/download/latest.json"
+      ]
+    }
+  },
+  "version": "0.1.0"
+}
