@@ -719,11 +719,15 @@ function render() {
 }
 
 function selectMainTab(tab: MainTab) {
+  const tabChanged = activeTab !== tab;
   activeTab = tab;
   toast = "";
   confirmClearHistoryOpen = false;
 
   render();
+  if (tabChanged) {
+    scrollPageToTop();
+  }
 }
 
 function renderClearHistoryConfirm() {
@@ -1315,7 +1319,7 @@ function renderShortcutSettings(settings: AppSettings) {
         ${renderShortcutSettingRow(
           "pushToTalkShortcut",
           "Push to talk",
-          "Hold to record. Recording stops as soon as you release the shortcut.",
+          "Hold to record, or double-tap to keep recording hands-free.",
           settings.pushToTalkShortcut,
         )}
         ${renderShortcutSettingRow(
@@ -1376,21 +1380,6 @@ function renderShortcutSettingRow(
   const disabled = captureInProgress ? "disabled" : "";
   const shortcutEnabled = shortcut.enabled !== false;
   const settingDisabled = captureInProgress ? "disabled" : "";
-  const doubleTapOption =
-    target === "pushToTalkShortcut"
-      ? `
-        <label class="check shortcut-enable-row">
-          <input
-            class="shortcut-double-tap"
-            data-shortcut-target="${target}"
-            type="checkbox"
-            ${shortcut.doubleTapToggle ? "checked" : ""}
-            ${shortcutEnabled && !captureInProgress ? "" : "disabled"}
-          />
-          Double-tap to keep recording hands-free
-        </label>
-      `
-      : "";
 
   return `
     <article class="shortcut-setting-row ${capturing ? "capturing" : ""} ${shortcutEnabled ? "" : "shortcut-disabled"}">
@@ -1420,7 +1409,6 @@ function renderShortcutSettingRow(
           />
           Enabled
         </label>
-        ${doubleTapOption}
       </div>
       ${inlineHelp}
     </article>
@@ -2435,23 +2423,6 @@ function bindEvents() {
           [target]: {
             ...current,
             enabled: input.checked,
-          },
-        } as Partial<AppSettings>);
-      };
-    });
-
-  document
-    .querySelectorAll<HTMLInputElement>(".shortcut-double-tap")
-    .forEach((input) => {
-      input.onchange = async () => {
-        if (!snapshot) return;
-        const target = input.dataset.shortcutTarget as ShortcutSettingKey;
-        const current = snapshot.settings[target];
-
-        await saveSettings({
-          [target]: {
-            ...current,
-            doubleTapToggle: input.checked,
           },
         } as Partial<AppSettings>);
       };

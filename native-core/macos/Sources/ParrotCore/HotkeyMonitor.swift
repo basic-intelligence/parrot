@@ -61,10 +61,12 @@ final class HotkeyMonitor {
     }
 
     private static func binding(id: String, mode: String, shortcut: ShortcutSettings) -> Binding {
-        Binding(
+        let doubleTapToggle = id == "pushToTalk" ? true : shortcut.doubleTapToggle
+
+        return Binding(
             id: id,
             mode: mode,
-            doubleTapToggle: shortcut.doubleTapToggle,
+            doubleTapToggle: doubleTapToggle,
             requiredKeyCodes: Set(shortcut.macosKeyCodes.map { CGKeyCode($0) })
         )
     }
