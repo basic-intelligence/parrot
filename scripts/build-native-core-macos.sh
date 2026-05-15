@@ -39,6 +39,8 @@ find_release_binary() {
   printf '%s\n' "$binary"
 }
 
+"$ROOT_DIR/scripts/build-whisper-framework-macos.sh"
+
 build_core_arch arm64
 build_core_arch x86_64
 ARM_BIN="$(find_release_binary arm64 parrot-core)"
@@ -74,6 +76,14 @@ if (( ${#FRAMEWORK_SEARCH_PATHS[@]} > 0 )); then
   WHISPER_FRAMEWORK="$(
     find "${FRAMEWORK_SEARCH_PATHS[@]}" \
       -path '*/release/whisper.framework' \
+      -type d 2>/dev/null | head -n 1
+  )"
+fi
+
+if [[ -z "$WHISPER_FRAMEWORK" ]]; then
+  WHISPER_FRAMEWORK="$(
+    find "$CORE_DIR/.vendor/WhisperFramework.xcframework" \
+      -path '*/whisper.framework' \
       -type d 2>/dev/null | head -n 1
   )"
 fi
@@ -213,6 +223,10 @@ if [[ -f "$WHISPER_BINARY" ]]; then
   echo "whisper.framework architectures: $WHISPER_ARCHS"
   if [[ " $WHISPER_ARCHS " != *" arm64 "* || " $WHISPER_ARCHS " != *" x86_64 "* ]]; then
     echo "whisper.framework must be universal arm64 and x86_64" >&2
+    exit 1
+  fi
+  if otool -L "$WHISPER_BINARY" | grep -E "Metal.framework|CoreML.framework"; then
+    echo "whisper.framework must be CPU-only for Intel compatibility" >&2
     exit 1
   fi
 fi

@@ -83,5 +83,4 @@ temp/
 *.profdata
 
 # Dev help
-DEVELOPMENT.md
-scripts/dev-fresh-install-macos.sh
+scripts/parrot-dev.sh

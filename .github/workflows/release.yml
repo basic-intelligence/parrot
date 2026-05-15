@@ -26,6 +26,9 @@ jobs:
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
+      - name: Ensure CMake is available
+        run: cmake --version || brew install cmake
+
       - name: Install dependencies
         run: npm ci
 

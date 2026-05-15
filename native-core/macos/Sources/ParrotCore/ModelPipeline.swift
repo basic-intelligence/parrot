@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import WhisperKit
 import llama
@@ -1067,6 +1068,54 @@ private struct WhisperHelperResponse: Codable {
     let error: String?
 }
 
+private struct ShortSocketAddress {
+    let directoryURL: URL
+    let path: String
+}
+
+private enum ShortUnixSocketPath {
+    static func make(fileName: String) throws -> ShortSocketAddress {
+        var template = Array("/tmp/parrot.XXXXXX".utf8CString)
+        var mkdtempErrno: Int32 = 0
+
+        let directoryPath: String? = template.withUnsafeMutableBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress,
+                  mkdtemp(baseAddress) != nil
+            else {
+                mkdtempErrno = errno
+                return nil
+            }
+            return String(cString: baseAddress)
+        }
+
+        guard let directoryPath else {
+            throw ModelPipelineError.transcriptionFailed(
+                "Could not create temporary socket directory: \(String(cString: strerror(mkdtempErrno)))"
+            )
+        }
+
+        let directoryURL = URL(fileURLWithPath: directoryPath, isDirectory: true)
+        let socketPath = directoryURL.appendingPathComponent(fileName).path
+
+        let address = sockaddr_un()
+        let maxPathBytes = MemoryLayout.size(ofValue: address.sun_path)
+
+        guard socketPath.utf8.count < maxPathBytes else {
+            try? FileManager.default.removeItem(at: directoryURL)
+            throw ModelPipelineError.transcriptionFailed(
+                "Generated parrot-whisper socket path is too long."
+            )
+        }
+
+        return ShortSocketAddress(directoryURL: directoryURL, path: socketPath)
+    }
+
+    static func remove(_ address: ShortSocketAddress) {
+        try? FileManager.default.removeItem(atPath: address.path)
+        try? FileManager.default.removeItem(at: address.directoryURL)
+    }
+}
+
 private func writeJSONLine<T: Encodable>(_ value: T, to handle: FileHandle) throws {
     let data = try JSONEncoder.parrot.encode(value)
     handle.write(data)
@@ -1162,16 +1211,21 @@ private final class PersistentWhisperCppSpeechModel {
     private func start() throws {
         stop()
 
-        let socketPath = FileManager.default.temporaryDirectory
-            .appendingPathComponent("parrot-whisper-\(UUID().uuidString).sock")
-            .path
-        let listener = try UnixSocketListener(path: socketPath)
+        let socketAddress = try ShortUnixSocketPath.make(fileName: "w.sock")
+        var shouldCleanUpSocketAddress = true
+        defer {
+            if shouldCleanUpSocketAddress {
+                ShortUnixSocketPath.remove(socketAddress)
+            }
+        }
+
+        let listener = try UnixSocketListener(path: socketAddress.path)
 
         let process = Process()
         process.executableURL = try helperExecutableURL()
         process.arguments = [
             "--model", modelURL.path,
-            "--socket", socketPath,
+            "--socket", socketAddress.path,
         ]
 
         let stdoutPipe = Pipe()
@@ -1186,6 +1240,10 @@ private final class PersistentWhisperCppSpeechModel {
 
         do {
             let socket = try listener.accept(timeoutSeconds: 20)
+
+            ShortUnixSocketPath.remove(socketAddress)
+            shouldCleanUpSocketAddress = false
+
             self.process = process
             self.socket = socket
             self.reader = JSONLineReader(handle: socket)

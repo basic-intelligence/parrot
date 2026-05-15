@@ -1070,6 +1070,7 @@ function renderLocalModelsSection(
   models: ModelStatus[],
   context: "setup" | "general",
 ) {
+  const cleanupHeading = context === "setup" ? "Cleanup (choose one)" : "Cleanup";
   const speechModelId =
     usesEnglishRoute(settings)
       ? MODEL_IDS.englishSpeech
@@ -1096,7 +1097,7 @@ function renderLocalModelsSection(
 
         <div class="local-model-group">
           <div class="local-model-group-heading">
-            <h3>Cleanup</h3>
+            <h3>${cleanupHeading}</h3>
             <p>Choose how Parrot polishes raw dictation after transcription.</p>
           </div>
           ${renderCleanupModelChooser(settings, models, context)}
@@ -1187,9 +1188,10 @@ function renderCleanupModelChooser(
 ) {
   const selected = selectedCleanupModelId(settings);
   const options = cleanupModelsForSettings(models);
+  const ariaLabel = context === "setup" ? "Cleanup model, choose one" : "Cleanup model";
 
   return `
-    <div class="cleanup-model-grid general-layout" role="radiogroup" aria-label="Cleanup model">
+    <div class="cleanup-model-grid general-layout" role="radiogroup" aria-label="${escapeAttr(ariaLabel)}">
       ${options
         .map((model) => {
           const isSelected = model.required || selected === model.id;

@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     io::ErrorKind,
+    os::unix::{ffi::OsStrExt, fs::DirBuilderExt},
     path::PathBuf,
     process::Stdio,
     sync::{
@@ -23,6 +24,69 @@ use uuid::Uuid;
 struct PendingRequest {
     generation: u64,
     tx: oneshot::Sender<anyhow::Result<Value>>,
+}
+
+const MACOS_UNIX_SOCKET_PATH_MAX_BYTES: usize = 104;
+const SHORT_SOCKET_CREATE_ATTEMPTS: usize = 8;
+
+struct ShortUnixSocketPath {
+    directory: PathBuf,
+    path: PathBuf,
+}
+
+impl ShortUnixSocketPath {
+    fn make() -> anyhow::Result<Self> {
+        for _ in 0..SHORT_SOCKET_CREATE_ATTEMPTS {
+            let random = Uuid::new_v4().simple().to_string();
+            let directory = PathBuf::from(format!(
+                "/tmp/parrot-{}-{}",
+                std::process::id(),
+                &random[..8]
+            ));
+            let mut builder = std::fs::DirBuilder::new();
+            builder.mode(0o700);
+
+            match builder.create(&directory) {
+                Ok(()) => {
+                    let path = directory.join("c.sock");
+                    if path.as_os_str().as_bytes().len() >= MACOS_UNIX_SOCKET_PATH_MAX_BYTES {
+                        let _ = std::fs::remove_dir(&directory);
+                        return Err(anyhow!(
+                            "generated native core socket path is too long: {}",
+                            path.display()
+                        ));
+                    }
+
+                    return Ok(Self { directory, path });
+                }
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(error).with_context(|| {
+                        format!(
+                            "failed to create native core socket directory at {}",
+                            directory.display()
+                        )
+                    });
+                }
+            }
+        }
+
+        Err(anyhow!(
+            "failed to create a unique native core socket directory under /tmp"
+        ))
+    }
+
+    fn socket_arg(&self) -> anyhow::Result<String> {
+        self.path
+            .to_str()
+            .context("native core socket path is not valid UTF-8")
+            .map(str::to_owned)
+    }
+
+    fn cleanup(&self) {
+        let _ = std::fs::remove_file(&self.path);
+        let _ = std::fs::remove_dir(&self.directory);
+    }
 }
 
 #[derive(Clone)]
@@ -89,32 +153,43 @@ impl CoreBridge {
     ) -> anyhow::Result<OwnedWriteHalf> {
         let connection_generation = generation.fetch_add(1, Ordering::SeqCst) + 1;
         let app_bundle = core_app_bundle_path(&app)?;
-        let socket_path = std::env::temp_dir().join(format!("parrot-core-{}.sock", Uuid::new_v4()));
-        let _ = std::fs::remove_file(&socket_path);
+        let socket_path = ShortUnixSocketPath::make()?;
 
-        let listener = UnixListener::bind(&socket_path).with_context(|| {
-            format!(
-                "failed to bind native core socket at {}",
-                socket_path.display()
-            )
-        })?;
+        let listener = match UnixListener::bind(&socket_path.path) {
+            Ok(listener) => listener,
+            Err(error) => {
+                socket_path.cleanup();
+                return Err(error).with_context(|| {
+                    format!(
+                        "failed to bind native core socket at {}",
+                        socket_path.path.display()
+                    )
+                });
+            }
+        };
 
-        let socket_arg = socket_path
-            .to_str()
-            .context("native core socket path is not valid UTF-8")?
-            .to_string();
+        let socket_arg = match socket_path.socket_arg() {
+            Ok(socket_arg) => socket_arg,
+            Err(error) => {
+                socket_path.cleanup();
+                return Err(error);
+            }
+        };
 
-        launch_native_core(&app_bundle, &socket_arg).await?;
+        if let Err(error) = launch_native_core(&app_bundle, &socket_arg).await {
+            socket_path.cleanup();
+            return Err(error);
+        }
 
         let accept = tokio::time::timeout(Duration::from_secs(20), listener.accept()).await;
         let (stream, _) = match accept {
             Ok(Ok(pair)) => pair,
             Ok(Err(error)) => {
-                let _ = std::fs::remove_file(&socket_path);
+                socket_path.cleanup();
                 return Err(error).context("native core socket accept failed");
             }
             Err(_) => {
-                let _ = std::fs::remove_file(&socket_path);
+                socket_path.cleanup();
                 return Err(anyhow!(
                     "native core did not connect back to socket after launching {}",
                     app_bundle.display()
@@ -122,7 +197,7 @@ impl CoreBridge {
             }
         };
 
-        let _ = std::fs::remove_file(&socket_path);
+        socket_path.cleanup();
 
         let (read_half, write_half) = stream.into_split();
 
@@ -470,6 +545,30 @@ fn hide_recording_overlay_after(app: AppHandle, delay: Duration) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{os::unix::fs::PermissionsExt, path::Path};
+
+    #[test]
+    fn creates_short_private_native_core_socket_path() {
+        let socket_path = ShortUnixSocketPath::make().unwrap();
+        let directory = socket_path.directory.clone();
+        let path = socket_path.path.clone();
+
+        assert!(directory.starts_with(Path::new("/tmp")));
+        assert_eq!(
+            path.file_name().and_then(|name| name.to_str()),
+            Some("c.sock")
+        );
+        assert!(path.as_os_str().as_bytes().len() < MACOS_UNIX_SOCKET_PATH_MAX_BYTES);
+        assert_eq!(socket_path.socket_arg().unwrap(), path.to_str().unwrap());
+
+        let mode = std::fs::metadata(&directory).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700);
+
+        socket_path.cleanup();
+
+        assert!(!path.exists());
+        assert!(!directory.exists());
+    }
 
     #[test]
     fn classifies_native_core_disconnect_errors() {
