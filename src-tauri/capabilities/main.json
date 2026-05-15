@@ -45,6 +45,7 @@
     "allow-get-app-snapshot",
     "allow-save-settings",
     "allow-set-launch-at-login",
+    "allow-set-update-badge",
     "allow-download-model",
     "allow-delete-model",
     "allow-warm-models",

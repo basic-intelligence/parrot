@@ -106,6 +106,7 @@ type PermissionRowOptions = {
   openSettingsWhenGranted?: boolean;
   variant?: "setup" | "settings";
 };
+type UpdateCheckSource = "manual" | "automatic";
 type UpdateStatus = "idle" | "current" | "available" | "error";
 type UpdateDownloadProgress = {
   downloadedBytes: number;
@@ -266,10 +267,14 @@ const LICENSE_URL = `${PARROT_REPO_URL}/blob/main/LICENSE`;
 const PRIVACY_URL = `${PARROT_REPO_URL}/blob/main/PRIVACY.md`;
 const THIRD_PARTY_LICENSES_URL = `${PARROT_REPO_URL}/blob/main/THIRD_PARTY_LICENSES.md`;
 const EMAIL_URL = "mailto:richard@basic.in?subject=Parrot%20feedback";
+const AUTO_UPDATE_CHECK_DELAY_MS = 4_000;
+const AUTO_UPDATE_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
+const LAST_UPDATE_CHECK_KEY = "parrot:lastUpdateCheckAt";
 
 async function boot() {
   await installEventListeners();
   await load();
+  scheduleAutomaticUpdateChecks();
 }
 
 async function installEventListeners() {
@@ -328,6 +333,14 @@ async function installEventListeners() {
     toast = "Parrot Core restarted.";
     render();
   });
+  await listen<{ tab?: MainTab }>("parrot:open-settings", (event) => {
+    if (event.payload.tab === "general") {
+      activeTab = "general";
+      toast = "";
+      confirmClearHistoryOpen = false;
+      render();
+    }
+  });
 }
 
 async function load() {
@@ -356,30 +369,75 @@ async function saveSettings(partial: Partial<AppSettings>) {
 }
 
 async function checkForUpdatesManually() {
+  await checkForUpdates("manual");
+}
+
+async function checkForUpdates(source: UpdateCheckSource) {
   if (checkingForUpdate || installingUpdate) return;
 
+  const manual = source === "manual";
   checkingForUpdate = true;
-  updateStatus = "idle";
-  updateInfo = null;
-  updateDownloadProgress = null;
-  updateDownloadFinished = false;
-  toast = "";
-  render();
+
+  if (manual) {
+    updateStatus = "idle";
+    updateInfo = null;
+    updateDownloadProgress = null;
+    updateDownloadFinished = false;
+    toast = "";
+    render();
+  }
 
   try {
-    const update = await check();
+    const update = await check({ timeout: 30_000 });
+
+    localStorage.setItem(LAST_UPDATE_CHECK_KEY, String(Date.now()));
 
     if (update) {
       updateStatus = "available";
       updateInfo = update;
+      await setUpdateBadge(true, update.version);
     } else {
       updateStatus = "current";
+      updateInfo = null;
+      await setUpdateBadge(false, null);
     }
-  } catch {
-    updateStatus = "error";
+  } catch (error) {
+    if (manual) {
+      updateStatus = "error";
+      toast = "";
+    } else {
+      console.debug("Automatic update check failed", error);
+    }
   } finally {
     checkingForUpdate = false;
     render();
+  }
+}
+
+function scheduleAutomaticUpdateChecks() {
+  window.setTimeout(() => {
+    void maybeRunAutomaticUpdateCheck();
+  }, AUTO_UPDATE_CHECK_DELAY_MS);
+
+  window.setInterval(() => {
+    void maybeRunAutomaticUpdateCheck();
+  }, AUTO_UPDATE_CHECK_INTERVAL_MS);
+}
+
+async function maybeRunAutomaticUpdateCheck() {
+  const lastCheckedAt = Number(localStorage.getItem(LAST_UPDATE_CHECK_KEY) || 0);
+  const stale = Date.now() - lastCheckedAt > AUTO_UPDATE_CHECK_INTERVAL_MS;
+
+  if (stale) {
+    await checkForUpdates("automatic");
+  }
+}
+
+async function setUpdateBadge(available: boolean, version: string | null) {
+  try {
+    await invoke("set_update_badge", { available, version });
+  } catch (error) {
+    console.debug("Could not update tray badge", error);
   }
 }
 
@@ -586,7 +644,14 @@ function render() {
     <section class="shell">
       <aside class="sidebar">
         <div class="brand">
-          <img class="brand-logo" src="/logo_no_background.png?v=2" alt="" />
+          <div class="brand-logo-wrap">
+            <img class="brand-logo" src="/logo_no_background.png?v=2" alt="" />
+            ${
+              updateStatus === "available"
+                ? '<span class="brand-update-dot" aria-label="Update available"></span>'
+                : ""
+            }
+          </div>
           <div>
             <h1>Parrot</h1>
           </div>
@@ -598,6 +663,11 @@ function render() {
             <button class="nav ${activeTab === id ? "active" : ""}" data-tab="${id}" ${navDisabled}>
               <span class="nav-icon">${icon(iconName)}</span>
               <span>${label}</span>
+              ${
+                id === "general" && updateStatus === "available"
+                  ? '<span class="nav-update-dot" aria-hidden="true"></span>'
+                  : ""
+              }
             </button>
           `,
             )

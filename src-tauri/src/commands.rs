@@ -214,6 +214,15 @@ pub async fn set_launch_at_login(
 }
 
 #[tauri::command]
+pub async fn set_update_badge(
+    app: AppHandle,
+    available: bool,
+    version: Option<String>,
+) -> Result<(), String> {
+    crate::tray::set_update_badge(&app, available, version.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn download_model(
     app: AppHandle,
     state: State<'_, AppState>,

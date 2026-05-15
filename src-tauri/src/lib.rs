@@ -152,6 +152,7 @@ pub fn run() {
             get_app_snapshot,
             save_settings,
             set_launch_at_login,
+            set_update_badge,
             download_model,
             delete_model,
             warm_models,
