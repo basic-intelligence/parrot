@@ -97,6 +97,85 @@ struct AppSettings: Codable, Sendable {
     var launchAtLogin: Bool
     var onboardingCompleted: Bool
     var inputMonitoringPermissionShownInOnboarding: Bool
+    var pasteIntoRecordingStartWindow: Bool
+
+    init(
+        selectedInputUid: String?,
+        pushToTalkShortcut: ShortcutSettings,
+        handsFreeShortcut: ShortcutSettings,
+        dictationLanguageMode: DictationLanguageMode,
+        dictationLanguageCode: String?,
+        cleanupModelId: String,
+        cleanupEnabled: Bool,
+        cleanupPrompt: String,
+        dictionaryEntries: [DictionaryEntry],
+        playSounds: Bool,
+        historyEnabled: Bool,
+        launchAtLogin: Bool,
+        onboardingCompleted: Bool,
+        inputMonitoringPermissionShownInOnboarding: Bool,
+        pasteIntoRecordingStartWindow: Bool = false
+    ) {
+        self.selectedInputUid = selectedInputUid
+        self.pushToTalkShortcut = pushToTalkShortcut
+        self.handsFreeShortcut = handsFreeShortcut
+        self.dictationLanguageMode = dictationLanguageMode
+        self.dictationLanguageCode = dictationLanguageCode
+        self.cleanupModelId = cleanupModelId
+        self.cleanupEnabled = cleanupEnabled
+        self.cleanupPrompt = cleanupPrompt
+        self.dictionaryEntries = dictionaryEntries
+        self.playSounds = playSounds
+        self.historyEnabled = historyEnabled
+        self.launchAtLogin = launchAtLogin
+        self.onboardingCompleted = onboardingCompleted
+        self.inputMonitoringPermissionShownInOnboarding = inputMonitoringPermissionShownInOnboarding
+        self.pasteIntoRecordingStartWindow = pasteIntoRecordingStartWindow
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case selectedInputUid
+        case pushToTalkShortcut
+        case handsFreeShortcut
+        case dictationLanguageMode
+        case dictationLanguageCode
+        case cleanupModelId
+        case cleanupEnabled
+        case cleanupPrompt
+        case dictionaryEntries
+        case playSounds
+        case historyEnabled
+        case launchAtLogin
+        case onboardingCompleted
+        case inputMonitoringPermissionShownInOnboarding
+        case pasteIntoRecordingStartWindow
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        selectedInputUid = try container.decodeIfPresent(String.self, forKey: .selectedInputUid)
+        pushToTalkShortcut = try container.decode(ShortcutSettings.self, forKey: .pushToTalkShortcut)
+        handsFreeShortcut = try container.decode(ShortcutSettings.self, forKey: .handsFreeShortcut)
+        dictationLanguageMode = try container.decode(DictationLanguageMode.self, forKey: .dictationLanguageMode)
+        dictationLanguageCode = try container.decodeIfPresent(String.self, forKey: .dictationLanguageCode)
+        cleanupModelId = try container.decodeIfPresent(String.self, forKey: .cleanupModelId) ?? "cleanup"
+        cleanupEnabled = try container.decode(Bool.self, forKey: .cleanupEnabled)
+        cleanupPrompt = try container.decodeIfPresent(String.self, forKey: .cleanupPrompt) ?? ""
+        dictionaryEntries = try container.decodeIfPresent([DictionaryEntry].self, forKey: .dictionaryEntries) ?? []
+        playSounds = try container.decode(Bool.self, forKey: .playSounds)
+        historyEnabled = try container.decode(Bool.self, forKey: .historyEnabled)
+        launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
+        onboardingCompleted = try container.decodeIfPresent(Bool.self, forKey: .onboardingCompleted) ?? false
+        inputMonitoringPermissionShownInOnboarding = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .inputMonitoringPermissionShownInOnboarding
+        ) ?? false
+        pasteIntoRecordingStartWindow = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .pasteIntoRecordingStartWindow
+        ) ?? false
+    }
 }
 
 struct DictionaryEntry: Codable, Sendable, Equatable {

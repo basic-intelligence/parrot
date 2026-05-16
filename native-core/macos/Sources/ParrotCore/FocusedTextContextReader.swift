@@ -4,10 +4,13 @@ import Foundation
 enum FocusedTextContextReader {
     static func textBeforeInsertionPoint(
         processIdentifier: pid_t?,
+        focusedElement providedFocusedElement: AXUIElement? = nil,
         maxCharacters: Int = 120
     ) -> String? {
+        let candidateElement = providedFocusedElement ?? focusedElement(processIdentifier: processIdentifier)
+
         guard maxCharacters > 0,
-              let focusedElement = focusedElement(processIdentifier: processIdentifier),
+              let focusedElement = candidateElement,
               let selectedRange = selectedTextRange(in: focusedElement),
               selectedRange.location != kCFNotFound,
               selectedRange.location > 0 else {
@@ -36,7 +39,7 @@ enum FocusedTextContextReader {
         return nil
     }
 
-    private static func focusedElement(processIdentifier: pid_t?) -> AXUIElement? {
+    static func focusedElement(processIdentifier: pid_t?) -> AXUIElement? {
         if let processIdentifier,
            let element = focusedElement(in: AXUIElementCreateApplication(processIdentifier)) {
             return element

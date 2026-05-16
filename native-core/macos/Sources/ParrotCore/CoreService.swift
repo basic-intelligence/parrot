@@ -38,7 +38,7 @@ actor CoreService {
     private var hotkeyProcessingTask: Task<Void, Never>?
     private var speechWarmTask: Task<Void, Never>?
     private var activeHotkeySource: String?
-    private var pasteTargetProcessIdentifier: pid_t?
+    private var pasteTarget: TextPasteTarget?
 
     init() {
         let monitor = hotkeyMonitor
@@ -237,7 +237,9 @@ actor CoreService {
             if activeHotkeySource != source { hotkeyMonitor.forceToggleOff(source: source) }
             return
         }
-        pasteTargetProcessIdentifier = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        pasteTarget = settings.pasteIntoRecordingStartWindow
+            ? TextPasteTarget.captureCurrent()
+            : nil
         do {
             recorder.preferredInputUID = settings.selectedInputUid
             try recorder.start()
@@ -255,7 +257,7 @@ actor CoreService {
             emitEvent("parrot:recording-started", payload: ["kind": .string("dictation")])
         } catch {
             activeHotkeySessionID = nil
-            pasteTargetProcessIdentifier = nil
+            pasteTarget = nil
             activeHotkeySource = nil
             hotkeyMonitor.setCancellationEnabled(false)
             hotkeyMonitor.forceToggleOff()
@@ -269,14 +271,14 @@ actor CoreService {
         if let activeHotkeySource, activeHotkeySource != source { return }
         guard let sessionID = activeHotkeySessionID else {
             activeHotkeySource = nil
-            pasteTargetProcessIdentifier = nil
+            pasteTarget = nil
             hotkeyRecording = false
             hotkeyMonitor.setCancellationEnabled(false)
             return
         }
         activeHotkeySource = nil
-        let targetProcessIdentifier = pasteTargetProcessIdentifier
-        pasteTargetProcessIdentifier = nil
+        let target = pasteTarget
+        pasteTarget = nil
         hotkeyRecording = false
         emitEvent("parrot:recording-processing", payload: ["kind": .string("dictation")])
 
@@ -285,14 +287,14 @@ actor CoreService {
             guard let self else { return }
             await self.finishHotkeyRecording(
                 sessionID: sessionID,
-                targetProcessIdentifier: targetProcessIdentifier
+                pasteTarget: target
             )
         }
     }
 
     private func finishHotkeyRecording(
         sessionID: UUID,
-        targetProcessIdentifier: pid_t?
+        pasteTarget: TextPasteTarget?
     ) async {
         defer { clearHotkeySessionIfCurrent(sessionID) }
 
@@ -303,7 +305,7 @@ actor CoreService {
             if result.cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
                 try TextPaster.paste(
                     result.cleaned,
-                    targetProcessIdentifier: targetProcessIdentifier
+                    target: pasteTarget
                 )
                 SoundFeedback.playSuccess(enabled: settings.playSounds)
             }
@@ -328,7 +330,7 @@ actor CoreService {
         activeHotkeySessionID = nil
         hotkeyRecording = false
         activeHotkeySource = nil
-        pasteTargetProcessIdentifier = nil
+        pasteTarget = nil
 
         hotkeyProcessingTask?.cancel()
         speechWarmTask?.cancel()
@@ -353,7 +355,7 @@ actor CoreService {
         activeHotkeySessionID = nil
         hotkeyProcessingTask = nil
         activeHotkeySource = nil
-        pasteTargetProcessIdentifier = nil
+        pasteTarget = nil
         hotkeyMonitor.setCancellationEnabled(false)
     }
 

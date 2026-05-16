@@ -31,4 +31,36 @@ final class ShortcutSettingsTests: XCTestCase {
         XCTAssertEqual(value?["enabled"]?.boolValue, false)
         XCTAssertEqual(value?["doubleTapToggle"]?.boolValue, true)
     }
+
+    func testAppSettingsMissingPasteTargetPreferenceDefaultsToFalse() throws {
+        let data = """
+        {
+          "selectedInputUid": null,
+          "pushToTalkShortcut": {
+            "displayName": "Fn",
+            "macosKeyCodes": [63],
+            "mode": "hold"
+          },
+          "handsFreeShortcut": {
+            "displayName": "Control + Space",
+            "macosKeyCodes": [59, 49],
+            "mode": "toggle"
+          },
+          "dictationLanguageMode": "english",
+          "dictationLanguageCode": null,
+          "cleanupModelId": "cleanup",
+          "cleanupEnabled": true,
+          "cleanupPrompt": "",
+          "dictionaryEntries": [],
+          "playSounds": true,
+          "historyEnabled": false,
+          "launchAtLogin": false,
+          "onboardingCompleted": false,
+          "inputMonitoringPermissionShownInOnboarding": false
+        }
+        """.data(using: .utf8)!
+
+        let settings = try JSONDecoder.parrot.decode(AppSettings.self, from: data)
+        XCTAssertFalse(settings.pasteIntoRecordingStartWindow)
+    }
 }

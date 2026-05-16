@@ -1317,6 +1317,14 @@ button.general-model-card-main:hover:not(:disabled) {
   margin-top: 14px;
 }
 
+.experimental-card .section-heading {
+  margin-bottom: 10px;
+}
+
+.experimental-card .hint {
+  margin-left: 26px;
+}
+
 .shortcuts-card {
   display: grid;
   gap: 15px;

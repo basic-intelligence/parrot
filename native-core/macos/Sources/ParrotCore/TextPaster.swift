@@ -3,6 +3,23 @@ import AppKit
 import CoreGraphics
 import Foundation
 
+struct TextPasteTarget: @unchecked Sendable {
+    let processIdentifier: pid_t
+    let focusedElement: AXUIElement?
+
+    static func captureCurrent() -> TextPasteTarget? {
+        guard let application = NSWorkspace.shared.frontmostApplication else {
+            return nil
+        }
+
+        let processIdentifier = application.processIdentifier
+        return TextPasteTarget(
+            processIdentifier: processIdentifier,
+            focusedElement: FocusedTextContextReader.focusedElement(processIdentifier: processIdentifier)
+        )
+    }
+}
+
 enum TextPasterError: Error, LocalizedError {
     case missingKeyboardPostPermission
     case couldNotCreatePasteEvent
@@ -18,15 +35,18 @@ enum TextPasterError: Error, LocalizedError {
 }
 
 enum TextPaster {
-    static func paste(_ text: String, targetProcessIdentifier: pid_t? = nil) throws {
+    static func paste(_ text: String, target: TextPasteTarget? = nil) throws {
         try ensureCanPostKeyboardEvents()
 
-        activateTargetAppIfNeeded(processIdentifier: targetProcessIdentifier)
+        if let target {
+            restorePasteTargetIfNeeded(target)
+        }
 
         let contextualText = ContextualPasteFormatter.format(
             text,
             precedingContext: FocusedTextContextReader.textBeforeInsertionPoint(
-                processIdentifier: targetProcessIdentifier
+                processIdentifier: target?.processIdentifier,
+                focusedElement: target?.focusedElement
             )
         )
 
@@ -67,6 +87,31 @@ enum TextPaster {
         throw TextPasterError.missingKeyboardPostPermission
     }
 
+    private static func restorePasteTargetIfNeeded(_ target: TextPasteTarget) {
+        activateTargetAppIfNeeded(processIdentifier: target.processIdentifier)
+
+        guard let focusedElement = target.focusedElement else {
+            return
+        }
+
+        if let window = windowElement(for: focusedElement) {
+            let applicationElement = AXUIElementCreateApplication(target.processIdentifier)
+            _ = AXUIElementSetAttributeValue(
+                applicationElement,
+                kAXFocusedWindowAttribute as CFString,
+                window
+            )
+        }
+
+        _ = AXUIElementSetAttributeValue(
+            focusedElement,
+            kAXFocusedAttribute as CFString,
+            kCFBooleanTrue
+        )
+
+        Thread.sleep(forTimeInterval: 0.05)
+    }
+
     private static func activateTargetAppIfNeeded(processIdentifier: pid_t?) {
         guard let processIdentifier,
               let app = NSRunningApplication(processIdentifier: processIdentifier),
@@ -76,6 +121,21 @@ enum TextPaster {
             _ = app.activate(options: [])
             Thread.sleep(forTimeInterval: 0.15)
         }
+    }
+
+    private static func windowElement(for element: AXUIElement) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element,
+            kAXWindowAttribute as CFString,
+            &value
+        ) == .success,
+              let value,
+              CFGetTypeID(value) == AXUIElementGetTypeID() else {
+            return nil
+        }
+
+        return (value as! AXUIElement)
     }
 
     private static func clonePasteboardItems(_ items: [NSPasteboardItem]) -> [NSPasteboardItem] {

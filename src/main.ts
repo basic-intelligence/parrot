@@ -59,6 +59,7 @@ type AppSettings = {
   cleanupPrompt: string;
   dictionaryEntries: DictionaryEntry[];
   playSounds: boolean;
+  pasteIntoRecordingStartWindow: boolean;
   historyEnabled: boolean;
   launchAtLogin: boolean;
   onboardingCompleted: boolean;
@@ -1298,6 +1299,17 @@ function renderRecording(settings: AppSettings, devices: AudioDevice[]) {
     <div class="card compact">
       <label class="check"><input id="playSounds" type="checkbox" ${settings.playSounds ? "checked" : ""}/> Play dictation sounds</label>
     </div>
+    <div class="card compact experimental-card">
+      <div class="section-heading">
+        <h3>Experimental</h3>
+        <p>Opt into paste targeting behavior that some workflows prefer.</p>
+      </div>
+      <label class="check">
+        <input id="pasteIntoRecordingStartWindow" type="checkbox" ${settings.pasteIntoRecordingStartWindow ? "checked" : ""}/>
+        Paste into the app/window where recording started
+      </label>
+      <p class="hint">Off by default: Parrot pastes into whichever text box is focused when transcription finishes. Turn this on to make Parrot try to return to the original app/window first.</p>
+    </div>
   `;
 }
 
@@ -2178,6 +2190,15 @@ function bindEvents() {
   if (playSounds)
     playSounds.onchange = () =>
       saveSettings({ playSounds: playSounds.checked });
+
+  const pasteIntoRecordingStartWindow = document.querySelector<HTMLInputElement>(
+    "#pasteIntoRecordingStartWindow",
+  );
+  if (pasteIntoRecordingStartWindow)
+    pasteIntoRecordingStartWindow.onchange = () =>
+      saveSettings({
+        pasteIntoRecordingStartWindow: pasteIntoRecordingStartWindow.checked,
+      });
 
   const cleanupEnabled =
     document.querySelector<HTMLInputElement>("#cleanupEnabled");

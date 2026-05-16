@@ -44,6 +44,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub dictionary_entries: Vec<DictionaryEntry>,
     pub play_sounds: bool,
+    #[serde(default)]
+    pub paste_into_recording_start_window: bool,
     pub history_enabled: bool,
     pub launch_at_login: bool,
     #[serde(default)]
@@ -96,6 +98,7 @@ impl Default for AppSettings {
             cleanup_prompt: String::new(),
             dictionary_entries: Vec::new(),
             play_sounds: true,
+            paste_into_recording_start_window: false,
             history_enabled: false,
             launch_at_login: false,
             onboarding_completed: false,
@@ -274,7 +277,11 @@ impl SettingsStore {
         let (mut settings, mut migrated) = if path.exists() {
             let value: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
             let missing_cleanup_model = value.get("cleanupModelId").is_none();
-            (serde_json::from_value(value)?, missing_cleanup_model)
+            let missing_paste_target_setting = value.get("pasteIntoRecordingStartWindow").is_none();
+            (
+                serde_json::from_value(value)?,
+                missing_cleanup_model || missing_paste_target_setting,
+            )
         } else {
             (AppSettings::default(), false)
         };
@@ -339,6 +346,7 @@ mod tests {
         assert!(!settings.push_to_talk_shortcut.double_tap_toggle);
         assert!(settings.hands_free_shortcut.enabled);
         assert!(!settings.hands_free_shortcut.double_tap_toggle);
+        assert!(!settings.paste_into_recording_start_window);
         assert!(!settings.input_monitoring_permission_shown_in_onboarding);
     }
 
@@ -397,6 +405,12 @@ mod tests {
         assert_eq!(
             value.get("cleanupModelId").and_then(|v| v.as_str()),
             Some("cleanup")
+        );
+        assert_eq!(
+            value
+                .get("pasteIntoRecordingStartWindow")
+                .and_then(|v| v.as_bool()),
+            Some(false)
         );
         assert!(value
             .as_object()
