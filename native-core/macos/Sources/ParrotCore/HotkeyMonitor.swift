@@ -61,7 +61,7 @@ final class HotkeyMonitor {
     }
 
     private static func binding(id: String, mode: String, shortcut: ShortcutSettings) -> Binding {
-        let doubleTapToggle = id == "pushToTalk" ? true : shortcut.doubleTapToggle
+        let doubleTapToggle = shortcut.doubleTapToggle
 
         return Binding(
             id: id,

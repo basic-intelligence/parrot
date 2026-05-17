@@ -302,17 +302,26 @@ actor CoreService {
             let result = try await finishRecording(checkCancellation: true)
             guard isHotkeySessionCurrent(sessionID), !Task.isCancelled else { return }
 
+            var pasteError: String?
             if result.cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
-                try TextPaster.paste(
-                    result.cleaned,
-                    target: pasteTarget
-                )
-                SoundFeedback.playSuccess(enabled: settings.playSounds)
+                do {
+                    try TextPaster.paste(
+                        result.cleaned,
+                        target: pasteTarget
+                    )
+                    SoundFeedback.playSuccess(enabled: settings.playSounds)
+                } catch {
+                    pasteError = error.localizedDescription
+                    SoundFeedback.playFailure(enabled: settings.playSounds)
+                }
             }
             guard isHotkeySessionCurrent(sessionID), !Task.isCancelled else { return }
 
             var payload = try result.jsonValue().objectValue ?? [:]
             payload["kind"] = .string("dictation")
+            if let pasteError {
+                payload["pasteError"] = .string(pasteError)
+            }
             emitEvent("parrot:recording-finished", payload: payload)
         } catch is CancellationError {
             // The Escape path emits parrot:recording-cancelled and owns user-facing feedback.
@@ -339,7 +348,7 @@ actor CoreService {
         hotkeyMonitor.setCancellationEnabled(false)
 
         if wasRecording {
-            _ = await recorder.stop()
+            _ = await recorder.stop(drainMilliseconds: 0)
         }
 
         SoundFeedback.playCancel(enabled: settings.playSounds)

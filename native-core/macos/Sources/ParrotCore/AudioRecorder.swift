@@ -53,8 +53,10 @@ final class AudioRecorder {
         }
     }
 
-    func stop() async -> [Float] {
-        try? await Task.sleep(nanoseconds: 25_000_000)
+    func stop(drainMilliseconds: UInt64 = 250) async -> [Float] {
+        if drainMilliseconds > 0 {
+            try? await Task.sleep(nanoseconds: drainMilliseconds * 1_000_000)
+        }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         return snapshot()

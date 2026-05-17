@@ -5,8 +5,8 @@ enum SpeechActivityTrimmer {
         _ samples: [Float],
         sampleRate: Int = 16_000,
         frameMilliseconds: Int = 20,
-        paddingMilliseconds: Int = 160,
-        minimumSpeechMilliseconds: Int = 120
+        paddingMilliseconds: Int = 600,
+        minimumSpeechMilliseconds: Int = 80
     ) -> [Float] {
         guard !samples.isEmpty else { return [] }
 

@@ -3,20 +3,15 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-struct TextPasteTarget: @unchecked Sendable {
+struct TextPasteTarget: Sendable {
     let processIdentifier: pid_t
-    let focusedElement: AXUIElement?
 
     static func captureCurrent() -> TextPasteTarget? {
         guard let application = NSWorkspace.shared.frontmostApplication else {
             return nil
         }
 
-        let processIdentifier = application.processIdentifier
-        return TextPasteTarget(
-            processIdentifier: processIdentifier,
-            focusedElement: FocusedTextContextReader.focusedElement(processIdentifier: processIdentifier)
-        )
+        return TextPasteTarget(processIdentifier: application.processIdentifier)
     }
 }
 
@@ -42,11 +37,14 @@ enum TextPaster {
             restorePasteTargetIfNeeded(target)
         }
 
+        let focusedElement = FocusedTextContextReader.focusedElement(
+            processIdentifier: target?.processIdentifier
+        )
         let contextualText = ContextualPasteFormatter.format(
             text,
             precedingContext: FocusedTextContextReader.textBeforeInsertionPoint(
                 processIdentifier: target?.processIdentifier,
-                focusedElement: target?.focusedElement
+                focusedElement: focusedElement
             )
         )
 
@@ -90,7 +88,9 @@ enum TextPaster {
     private static func restorePasteTargetIfNeeded(_ target: TextPasteTarget) {
         activateTargetAppIfNeeded(processIdentifier: target.processIdentifier)
 
-        guard let focusedElement = target.focusedElement else {
+        guard let focusedElement = FocusedTextContextReader.focusedElement(
+            processIdentifier: target.processIdentifier
+        ) else {
             return
         }
 
