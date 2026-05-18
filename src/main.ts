@@ -414,7 +414,7 @@ async function checkForUpdates(source: UpdateCheckSource) {
 
 function scheduleAutomaticUpdateChecks() {
   window.setTimeout(() => {
-    void maybeRunAutomaticUpdateCheck();
+    void maybeRunAutomaticUpdateCheck({ force: true });
   }, AUTO_UPDATE_CHECK_DELAY_MS);
 
   window.setInterval(() => {
@@ -422,11 +422,13 @@ function scheduleAutomaticUpdateChecks() {
   }, AUTO_UPDATE_CHECK_INTERVAL_MS);
 }
 
-async function maybeRunAutomaticUpdateCheck() {
+async function maybeRunAutomaticUpdateCheck(
+  options: { force?: boolean } = {},
+) {
   const lastCheckedAt = Number(localStorage.getItem(LAST_UPDATE_CHECK_KEY) || 0);
   const stale = Date.now() - lastCheckedAt > AUTO_UPDATE_CHECK_INTERVAL_MS;
 
-  if (stale) {
+  if (options.force || stale) {
     await checkForUpdates("automatic");
   }
 }
@@ -740,11 +742,6 @@ function render() {
         <div class="brand">
           <div class="brand-logo-wrap">
             <img class="brand-logo" src="/logo_no_background.png?v=2" alt="" />
-            ${
-              updateStatus === "available"
-                ? '<span class="brand-update-dot" aria-label="Update available"></span>'
-                : ""
-            }
           </div>
           <div>
             <h1>Parrot</h1>
@@ -757,11 +754,6 @@ function render() {
             <button class="nav ${activeTab === id ? "active" : ""}" data-tab="${id}" ${navDisabled}>
               <span class="nav-icon">${icon(iconName)}</span>
               <span>${label}</span>
-              ${
-                id === "general" && updateStatus === "available"
-                  ? '<span class="nav-update-dot" aria-hidden="true"></span>'
-                  : ""
-              }
             </button>
           `,
             )
