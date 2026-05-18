@@ -55,6 +55,22 @@ type ShortcutNotice = {
   level: "info" | "success" | "error";
   message: string;
 };
+type SettingsNotice = {
+  level: "info" | "error";
+  message: string;
+};
+type SettingsNoticeKey =
+  | "launchAtLogin"
+  | "permissions"
+  | "updates"
+  | "models"
+  | "language"
+  | "recording"
+  | "cleanup"
+  | "cleanupPrompt"
+  | "dictionary"
+  | "history"
+  | "about";
 type CleanupModelSelectionNotice = {
   id: CleanupModelId;
   message: string;
@@ -175,6 +191,8 @@ let lastRenderWasSetupGate = false;
 let testRecording = false;
 let testResult = "";
 let toast = "";
+const settingsNotices: Partial<Record<SettingsNoticeKey, SettingsNotice>> = {};
+const modelNotices = new Map<string, SettingsNotice>();
 let eventListenersInstalled = false;
 let modelPollHandle: number | null = null;
 let confirmClearHistoryOpen = false;
@@ -253,45 +271,48 @@ async function installEventListeners() {
     try {
       if (event.payload.kind !== "test") {
         snapshot = await saveRecordingResult(event.payload);
+        clearSettingsNotice("history");
         if (activeTab === "history") render();
       } else {
         await load();
       }
     } catch (error) {
-      toast = `Dictation pasted, but history could not be saved: ${errorMessage(error)}`;
+      setSettingsNotice(
+        "history",
+        `Dictation pasted, but history could not be saved: ${errorMessage(error)}`,
+      );
       render();
     }
   });
   await listen("parrot:recording-cancelled", () => {
-    // Intentional user cancellation: do not save history and do not show an error toast.
-    toast = "";
-    render();
+    // Intentional user cancellation: the floating overlay owns user-facing feedback.
   });
-  await listen<{ error?: string }>("parrot:recording-failed", (event) => {
-    toast = event.payload.error || "Recording failed.";
-    render();
+  await listen("parrot:recording-failed", () => {
+    // The floating overlay owns normal recording failures.
   });
   await listen<{ error?: string }>("parrot:hotkey-monitor-failed", (event) => {
     const message =
       event.payload.error ||
       "Shortcut monitor failed. Check Accessibility permission.";
     void maybeRequireInputMonitoring(message);
-    toast = message;
+    shortcutNotice = {
+      level: "error",
+      message,
+    };
     render();
   });
-  await listen<{ error?: string }>("parrot:native-core-disconnected", (event) => {
+  await listen("parrot:native-core-disconnected", () => {
+    const wasTestRecording = testRecording;
+    const wasTestTranscribing =
+      testResult === "Transcribing…" || testResult === "Transcribing...";
     testRecording = false;
-    if (testResult === "Transcribing…" || testResult === "Transcribing...") {
+    if (wasTestTranscribing) {
       testResult = "Parrot Core crashed while transcribing. This recording was lost.";
     }
-    toast =
-      event.payload.error ||
-      "Parrot Core disconnected. Parrot will try to restart it automatically.";
-    render();
+    if (wasTestRecording || wasTestTranscribing) render();
   });
   await listen("parrot:native-core-recovered", () => {
-    toast = "Parrot Core restarted.";
-    render();
+    // Recovery is background state; do not surface it in Settings.
   });
   await listen<{ tab?: MainTab }>("parrot:open-settings", (event) => {
     if (event.payload.tab === "general") {
@@ -326,6 +347,21 @@ async function saveSettings(partial: Partial<AppSettings>) {
   render();
 }
 
+async function saveSettingsWithNotice(
+  partial: Partial<AppSettings>,
+  noticeKey: SettingsNoticeKey,
+  errorPrefix: string,
+) {
+  clearSettingsNotice(noticeKey);
+
+  try {
+    await saveSettings(partial);
+  } catch (error) {
+    setSettingsNotice(noticeKey, `${errorPrefix}: ${errorMessage(error)}`);
+    render();
+  }
+}
+
 async function checkForUpdatesManually() {
   await checkForUpdates("manual");
 }
@@ -341,7 +377,7 @@ async function checkForUpdates(source: UpdateCheckSource) {
     updateInfo = null;
     updateDownloadProgress = null;
     updateDownloadFinished = false;
-    toast = "";
+    clearSettingsNotice("updates");
     render();
   }
 
@@ -359,10 +395,14 @@ async function checkForUpdates(source: UpdateCheckSource) {
       updateInfo = null;
       await setUpdateBadge(false, null);
     }
+    clearSettingsNotice("updates");
   } catch (error) {
     if (manual) {
       updateStatus = "error";
-      toast = "";
+      setSettingsNotice(
+        "updates",
+        `Could not check for updates. ${friendlyUpdateError(error)}`,
+      );
     } else {
       console.debug("Automatic update check failed", error);
     }
@@ -407,7 +447,7 @@ async function installParrotUpdate() {
   updateDownloadProgress = { downloadedBytes: 0, totalBytes: null };
   updateDownloadFinished = false;
   lastUpdateProgressRenderAt = 0;
-  toast = "";
+  clearSettingsNotice("updates");
   render();
 
   try {
@@ -417,7 +457,10 @@ async function installParrotUpdate() {
     installingUpdate = false;
     updateDownloadProgress = null;
     updateDownloadFinished = false;
-    toast = `Could not install update. ${friendlyUpdateError(error)}`;
+    setSettingsNotice(
+      "updates",
+      `Could not install update. ${friendlyUpdateError(error)}`,
+    );
     render();
   }
 }
@@ -473,6 +516,10 @@ function setupRequirementsComplete(value: Snapshot) {
     setupPermissionsComplete(value.permissions, value.settings) &&
     requiredModelsDownloaded(value.models)
   );
+}
+
+function showingSetupGate() {
+  return snapshot !== null && !snapshot.settings.onboardingCompleted;
 }
 
 function inputMonitoringShownInOnboarding(
@@ -743,7 +790,6 @@ function render() {
         </div>
       </aside>
       <section class="content">
-        ${toast ? renderToast(toast) : ""}
         ${activeTab === "general" ? renderGeneral(settings, snapshot.permissions, models) : ""}
         ${activeTab === "recording" ? renderRecording(settings, devices) : ""}
         ${activeTab === "cleanup" ? renderCleanup(
@@ -1213,6 +1259,7 @@ function renderLocalModelsSection(
         <h3>Local models</h3>
         <p>These models run on your Mac. Downloaded models stay on disk until you delete them.</p>
       </div>
+      ${context === "general" ? renderSettingsNotice("models") : ""}
 
       <div class="local-model-stack">
         <div class="local-model-group">
@@ -1258,6 +1305,7 @@ function renderSelectedSpeechModelCard(model: ModelStatus) {
       </div>
       <div class="general-model-card-progress">${renderInlineModelProgress(model)}</div>
       ${model.error ? `<p class="model-error">${escapeHtml(model.error)}</p>` : ""}
+      ${renderModelNotice(model.id)}
     </article>
   `;
 }
@@ -1300,6 +1348,7 @@ function renderCleanupModelCard(
       </div>
       <div class="general-model-card-progress">${renderInlineModelProgress(model)}</div>
       ${model.error ? `<p class="model-error">${escapeHtml(model.error)}</p>` : ""}
+      ${renderModelNotice(model.id)}
       ${notice ? `<p class="general-model-card-notice" role="status">${escapeHtml(notice)}</p>` : ""}
     </article>
   `;
@@ -1338,6 +1387,7 @@ function renderRecording(settings: AppSettings, devices: AudioDevice[]) {
         <span>Microphone</span>
         <select id="inputDevice">${deviceOptions(devices, settings.selectedInputUid)}</select>
       </label>
+      ${renderSettingsNotice("recording")}
     </div>
     ${renderShortcutSettings(settings)}
     <div class="card">
@@ -1410,6 +1460,72 @@ function renderShortcutNotice(notice: ShortcutNotice) {
     <div class="shortcut-notice ${notice.level} dismissible-alert" role="${role}" aria-live="${live}" aria-atomic="true">
       <span>${escapeHtml(notice.message)}</span>
       <button class="alert-close dismiss-shortcut-notice" type="button" aria-label="Dismiss">×</button>
+    </div>
+  `;
+}
+
+function setSettingsNotice(
+  key: SettingsNoticeKey,
+  message: string,
+  level: SettingsNotice["level"] = "error",
+) {
+  settingsNotices[key] = { level, message };
+}
+
+function clearSettingsNotice(key: SettingsNoticeKey) {
+  delete settingsNotices[key];
+}
+
+function setModelNotice(
+  modelId: string,
+  message: string,
+  level: SettingsNotice["level"] = "error",
+) {
+  modelNotices.set(modelId, { level, message });
+}
+
+function clearModelNotice(modelId: string) {
+  modelNotices.delete(modelId);
+}
+
+function clearAllModelNotices() {
+  modelNotices.clear();
+}
+
+function isSettingsNoticeKey(key: string): key is SettingsNoticeKey {
+  return [
+    "launchAtLogin",
+    "permissions",
+    "updates",
+    "models",
+    "language",
+    "recording",
+    "cleanup",
+    "cleanupPrompt",
+    "dictionary",
+    "history",
+    "about",
+  ].includes(key);
+}
+
+function renderSettingsNotice(key: SettingsNoticeKey) {
+  const notice = settingsNotices[key];
+  return notice ? renderInlineNotice(notice, key) : "";
+}
+
+function renderModelNotice(modelId: string) {
+  const notice = modelNotices.get(modelId);
+  return notice ? renderInlineNotice(notice, `model:${modelId}`) : "";
+}
+
+function renderInlineNotice(notice: SettingsNotice, dismissKey: string) {
+  const role = notice.level === "error" ? "alert" : "status";
+  const live = notice.level === "error" ? "assertive" : "polite";
+
+  return `
+    <div class="inline-notice ${notice.level} dismissible-alert" role="${role}" aria-live="${live}" aria-atomic="true">
+      <span>${escapeHtml(notice.message)}</span>
+      <button class="alert-close dismiss-inline-notice" type="button" data-dismiss-notice="${escapeAttr(dismissKey)}" aria-label="Dismiss">×</button>
     </div>
   `;
 }
@@ -1585,6 +1701,7 @@ function renderCleanup(
     <div class="card compact">
       <label class="check"><input id="cleanupEnabled" type="checkbox" ${cleanupChecked ? "checked" : ""} ${cleanupDisabled ? "disabled" : ""}/> Enable cleanup</label>
       ${cleanupHint ? `<p class="hint">${escapeHtml(cleanupHint)}</p>` : ""}
+      ${renderSettingsNotice("cleanup")}
     </div>
 
     <div class="card">
@@ -1597,6 +1714,7 @@ function renderCleanup(
         <button id="saveCleanupPrompt" class="primary">Save prompt</button>
         <button id="resetCleanupPrompt" class="secondary">Reset to default</button>
       </div>
+      ${renderSettingsNotice("cleanupPrompt")}
     </div>
 
     <div class="card">
@@ -1609,6 +1727,7 @@ function renderCleanup(
         <input id="dictionaryTerm" class="text-input" placeholder="Word or phrase" maxlength="60" />
         <button id="addDictionaryEntry" class="primary">Add</button>
       </div>
+      ${renderSettingsNotice("dictionary")}
 
       <div class="dictionary-list">
         ${dictionaryEntries.map(renderDictionaryRow).join("") || '<p class="empty">No Dictionary entries yet.</p>'}
@@ -1634,6 +1753,7 @@ function renderHistory(settings: AppSettings, history: HistoryEntry[]) {
         <label class="check"><input id="historyEnabled" type="checkbox" ${settings.historyEnabled ? "checked" : ""}/> Save transcripts to history</label>
         <button id="clearHistory" class="danger" ${history.length === 0 ? "disabled" : ""}>Clear all</button>
       </div>
+      ${renderSettingsNotice("history")}
     </div>
     <div class="card">
       <input id="historySearch" class="search" placeholder="Search history" />
@@ -1805,6 +1925,7 @@ function renderAbout() {
         <h3>Open source links</h3>
         <p>Report issues, suggest improvements, star the repo, or get in touch.</p>
       </div>
+      ${renderSettingsNotice("about")}
       <div class="about-action-grid">
         ${renderExternalLinkButton("View on GitHub", PARROT_REPO_URL, "primary", "externalLink")}
         ${renderExternalLinkButton("Report Bug", BUG_REPORT_URL, "secondary", "bug")}
@@ -1845,6 +1966,7 @@ function renderGeneral(
 
     <div class="card compact">
       <label class="check"><input id="launchAtLogin" type="checkbox" ${settings.launchAtLogin ? "checked" : ""}/> Launch at login</label>
+      ${renderSettingsNotice("launchAtLogin")}
     </div>
 
     ${renderUpdateSection()}
@@ -1854,6 +1976,7 @@ function renderGeneral(
         <h3>Permissions</h3>
         <p>Parrot needs these no matter which language or local model you use.</p>
       </div>
+      ${renderSettingsNotice("permissions")}
       <div class="permission-list embedded">
         ${permissionRequirementsForDisplay(permissions, settings)
           .filter((requirement) => requirement.kind !== "inputMonitoring" || shouldShowInputMonitoringPermission(settings) || requirement.required)
@@ -1872,6 +1995,7 @@ function renderGeneral(
         <h3>Dictation language</h3>
         <p>This chooses the speech-to-text route and which cleanup options are available.</p>
       </div>
+      ${renderSettingsNotice("language")}
       ${renderLanguageControls(settings, "general")}
     </section>
 
@@ -1898,6 +2022,7 @@ function renderUpdateSection() {
             <h3>Parrot updates</h3>
           </div>
           <p class="update-description" aria-live="polite">${escapeHtml(updateStatusDescription())}</p>
+          ${renderSettingsNotice("updates")}
           ${renderUpdateInstallProgress()}
           ${
             notes
@@ -1997,12 +2122,18 @@ function bindPermissionButtons() {
         if (!kind || !snapshot) return;
 
         toast = "";
+        clearSettingsNotice("permissions");
 
         try {
           const permissions = await requestPermission(kind, openSettings);
           acceptPermissionSnapshot(permissions);
         } catch (error) {
-          toast = `Could not request permission: ${errorMessage(error)}`;
+          const message = `Could not request permission: ${errorMessage(error)}`;
+          if (showingSetupGate()) {
+            toast = message;
+          } else {
+            setSettingsNotice("permissions", message);
+          }
         }
 
         render();
@@ -2029,13 +2160,17 @@ function bindModelButtons() {
         if (cleanupModelSelectionNotice?.id === kind) {
           cleanupModelSelectionNotice = null;
         }
-        toast = "";
+        clearSettingsNotice("models");
+        clearModelNotice(kind);
         try {
           snapshot = await downloadModel(kind);
           render();
           pollModelsUntilStable();
         } catch (error) {
-          toast = `Could not start model download: ${errorMessage(error)}`;
+          setModelNotice(
+            kind,
+            `Could not start model download: ${errorMessage(error)}`,
+          );
           render();
         }
       };
@@ -2048,7 +2183,8 @@ function bindModelButtons() {
         const kind = button.dataset.kind;
         if (!kind) return;
 
-        toast = "Deleting model…";
+        clearSettingsNotice("models");
+        setModelNotice(kind, "Deleting model…", "info");
         render();
 
         try {
@@ -2060,9 +2196,9 @@ function bindModelButtons() {
             window.clearInterval(modelPollHandle);
             modelPollHandle = null;
           }
-          toast = "";
+          clearModelNotice(kind);
         } catch (error) {
-          toast = `Could not delete model: ${errorMessage(error)}`;
+          setModelNotice(kind, `Could not delete model: ${errorMessage(error)}`);
         }
 
         render();
@@ -2094,11 +2230,21 @@ function bindCleanupModelChooser() {
         }
 
         cleanupModelSelectionNotice = null;
-        toast = "";
+        clearSettingsNotice("models");
 
-        await saveSettings({
-          cleanupModelId: id,
-        });
+        try {
+          await saveSettings({
+            cleanupModelId: id,
+          });
+        } catch (error) {
+          const message = `Could not select cleanup model: ${errorMessage(error)}`;
+          if (showingSetupGate()) {
+            toast = message;
+          } else {
+            setSettingsNotice("models", message);
+          }
+          render();
+        }
       };
     });
 }
@@ -2140,12 +2286,23 @@ async function saveLanguageChoice(
 ) {
   if (!snapshot) return;
   toast = "";
-  const next = await saveSettingsApi({
-    ...snapshot.settings,
-    dictationLanguageMode: mode,
-    dictationLanguageCode: code,
-  });
-  snapshot = next;
+  clearSettingsNotice("language");
+
+  try {
+    const next = await saveSettingsApi({
+      ...snapshot.settings,
+      dictationLanguageMode: mode,
+      dictationLanguageCode: code,
+    });
+    snapshot = next;
+  } catch (error) {
+    const message = `Could not update dictation language: ${errorMessage(error)}`;
+    if (showingSetupGate()) {
+      toast = message;
+    } else {
+      setSettingsNotice("language", message);
+    }
+  }
 
   render();
 }
@@ -2225,14 +2382,22 @@ function bindSetupEvents() {
 async function refreshPermissionStatus(options: { silent?: boolean } = {}) {
   if (!snapshot) return;
 
-  if (!options.silent) toast = "";
+  if (!options.silent) {
+    toast = "";
+    clearSettingsNotice("permissions");
+  }
 
   try {
     const permissions = await permissionStatuses();
     acceptPermissionSnapshot(permissions);
   } catch (error) {
     if (!options.silent) {
-      toast = `Could not refresh permissions: ${errorMessage(error)}`;
+      const message = `Could not refresh permissions: ${errorMessage(error)}`;
+      if (showingSetupGate()) {
+        toast = message;
+      } else {
+        setSettingsNotice("permissions", message);
+      }
     }
   }
 
@@ -2277,30 +2442,46 @@ function bindEvents() {
   const inputDevice = document.querySelector<HTMLSelectElement>("#inputDevice");
   if (inputDevice)
     inputDevice.onchange = () => {
-      saveSettings({
-        selectedInputUid: inputDevice.value || null,
-      });
+      void saveSettingsWithNotice(
+        {
+          selectedInputUid: inputDevice.value || null,
+        },
+        "recording",
+        "Could not update microphone",
+      );
     };
 
   const playSounds = document.querySelector<HTMLInputElement>("#playSounds");
   if (playSounds)
     playSounds.onchange = () =>
-      saveSettings({ playSounds: playSounds.checked });
+      void saveSettingsWithNotice(
+        { playSounds: playSounds.checked },
+        "recording",
+        "Could not update sound setting",
+      );
 
   const pasteIntoRecordingStartWindow = document.querySelector<HTMLInputElement>(
     "#pasteIntoRecordingStartWindow",
   );
   if (pasteIntoRecordingStartWindow)
     pasteIntoRecordingStartWindow.onchange = () =>
-      saveSettings({
-        pasteIntoRecordingStartWindow: pasteIntoRecordingStartWindow.checked,
-      });
+      void saveSettingsWithNotice(
+        {
+          pasteIntoRecordingStartWindow: pasteIntoRecordingStartWindow.checked,
+        },
+        "recording",
+        "Could not update paste setting",
+      );
 
   const cleanupEnabled =
     document.querySelector<HTMLInputElement>("#cleanupEnabled");
   if (cleanupEnabled)
     cleanupEnabled.onchange = () => {
-      saveSettings({ cleanupEnabled: cleanupEnabled.checked });
+      void saveSettingsWithNotice(
+        { cleanupEnabled: cleanupEnabled.checked },
+        "cleanup",
+        "Could not update cleanup setting",
+      );
     };
 
   const saveCleanupPrompt =
@@ -2318,19 +2499,26 @@ function bindEvents() {
         rawPrompt.trim().length === 0 ||
         rawPrompt.trim() === routeDefaultPrompt.trim();
 
-      toast = "";
+      clearSettingsNotice("cleanupPrompt");
 
-      await saveSettings({
-        cleanupPrompt: shouldUseDefault ? "" : rawPrompt,
-      });
+      await saveSettingsWithNotice(
+        {
+          cleanupPrompt: shouldUseDefault ? "" : rawPrompt,
+        },
+        "cleanupPrompt",
+        "Could not save cleanup prompt",
+      );
     };
 
   const resetCleanupPrompt =
     document.querySelector<HTMLButtonElement>("#resetCleanupPrompt");
   if (resetCleanupPrompt)
     resetCleanupPrompt.onclick = async () => {
-      toast = "";
-      await saveSettings({ cleanupPrompt: "" });
+      await saveSettingsWithNotice(
+        { cleanupPrompt: "" },
+        "cleanupPrompt",
+        "Could not reset cleanup prompt",
+      );
     };
 
   const addDictionaryEntry =
@@ -2349,13 +2537,17 @@ function bindEvents() {
         return;
       }
 
-      toast = "";
-      saveSettings({
-        dictionaryEntries: mergeDictionaryEntry(
-          snapshot.settings.dictionaryEntries || [],
-          entry,
-        ),
-      });
+      clearSettingsNotice("dictionary");
+      void saveSettingsWithNotice(
+        {
+          dictionaryEntries: mergeDictionaryEntry(
+            snapshot.settings.dictionaryEntries || [],
+            entry,
+          ),
+        },
+        "dictionary",
+        "Could not update Dictionary",
+      );
     };
 
   document
@@ -2365,11 +2557,15 @@ function bindEvents() {
         if (!snapshot) return;
         const id = button.dataset.id;
 
-        saveSettings({
-          dictionaryEntries: (
-            snapshot.settings.dictionaryEntries || []
-          ).filter((entry) => entry.id !== id),
-        });
+        void saveSettingsWithNotice(
+          {
+            dictionaryEntries: (
+              snapshot.settings.dictionaryEntries || []
+            ).filter((entry) => entry.id !== id),
+          },
+          "dictionary",
+          "Could not delete Dictionary entry",
+        );
       };
     });
 
@@ -2377,18 +2573,26 @@ function bindEvents() {
     document.querySelector<HTMLInputElement>("#historyEnabled");
   if (historyEnabled)
     historyEnabled.onchange = () =>
-      saveSettings({ historyEnabled: historyEnabled.checked });
+      void saveSettingsWithNotice(
+        { historyEnabled: historyEnabled.checked },
+        "history",
+        "Could not update history setting",
+      );
 
   const launchAtLogin =
     document.querySelector<HTMLInputElement>("#launchAtLogin");
   if (launchAtLogin)
     launchAtLogin.onchange = async () => {
-      toast = "";
+      clearSettingsNotice("launchAtLogin");
       try {
         snapshot = await setLaunchAtLogin(launchAtLogin.checked);
+        clearSettingsNotice("launchAtLogin");
         render();
       } catch (error) {
-        toast = `Could not update launch at login: ${errorMessage(error)}`;
+        setSettingsNotice(
+          "launchAtLogin",
+          `Could not update launch at login: ${errorMessage(error)}`,
+        );
         await load();
       }
     };
@@ -2428,7 +2632,7 @@ function bindEvents() {
     clearHistory.onclick = () => {
       clearHistoryBusy = false;
       confirmClearHistoryOpen = true;
-      toast = "";
+      clearSettingsNotice("history");
       render();
       document.querySelector<HTMLButtonElement>("#cancelClearHistory")?.focus();
     };
@@ -2440,7 +2644,6 @@ function bindEvents() {
     cancelClearHistory.onclick = () => {
       if (clearHistoryBusy) return;
       confirmClearHistoryOpen = false;
-      toast = "";
       render();
     };
 
@@ -2460,9 +2663,12 @@ function bindEvents() {
 
       try {
         snapshot = await clearHistory();
-        toast = "";
+        clearSettingsNotice("history");
       } catch (error) {
-        toast = `Could not clear history: ${errorMessage(error)}`;
+        setSettingsNotice(
+          "history",
+          `Could not clear history: ${errorMessage(error)}`,
+        );
       } finally {
         clearHistoryBusy = false;
         confirmClearHistoryOpen = false;
@@ -2476,11 +2682,13 @@ function bindEvents() {
       button.onclick = async () => {
         try {
           await navigator.clipboard.writeText(button.dataset.transcript || "");
-          toast = "";
-          document.querySelector<HTMLElement>(".content > .toast")?.remove();
+          clearSettingsNotice("history");
           showHistoryCopyFeedback(button);
         } catch (error) {
-          toast = `Could not copy transcript: ${errorMessage(error)}`;
+          setSettingsNotice(
+            "history",
+            `Could not copy transcript: ${errorMessage(error)}`,
+          );
           render();
         }
       };
@@ -2492,8 +2700,12 @@ function bindEvents() {
       button.onclick = async () => {
         try {
           snapshot = await deleteHistoryItem(button.dataset.id || "");
+          clearSettingsNotice("history");
         } catch (error) {
-          toast = `Could not delete history item: ${errorMessage(error)}`;
+          setSettingsNotice(
+            "history",
+            `Could not delete history item: ${errorMessage(error)}`,
+          );
         }
         render();
       };
@@ -2530,49 +2742,67 @@ function bindEvents() {
         const target = input.dataset.shortcutTarget as ShortcutSettingKey;
         const current = snapshot.settings[target];
 
-        await saveSettings({
-          [target]: {
-            ...current,
-            enabled: input.checked,
-          },
-        } as Partial<AppSettings>);
+        try {
+          await saveSettings({
+            [target]: {
+              ...current,
+              enabled: input.checked,
+            },
+          } as Partial<AppSettings>);
+        } catch (error) {
+          shortcutNotice = {
+            level: "error",
+            message: `Could not update ${shortcutTargetLabel(target)}: ${errorMessage(error)}`,
+          };
+          render();
+        }
       };
     });
 
-  const resetShortcuts =
-    document.querySelector<HTMLButtonElement>("#resetShortcuts");
-  if (resetShortcuts)
-    resetShortcuts.onclick = async () => {
-      const shouldRestart =
-        shortcutMonitorPausedForCapture &&
-        snapshot !== null &&
-        permissionsAllGranted(snapshot.permissions);
-      shortcutCaptureSession += 1;
-      shortcutCaptureTarget = null;
-      shortcutMonitorPausedForCapture = false;
+    const resetShortcuts =
+      document.querySelector<HTMLButtonElement>("#resetShortcuts");
+    if (resetShortcuts)
+      resetShortcuts.onclick = async () => {
+        const shouldRestart =
+          shortcutMonitorPausedForCapture &&
+          snapshot !== null &&
+          permissionsAllGranted(snapshot.permissions);
+        shortcutCaptureSession += 1;
+        shortcutCaptureTarget = null;
+        shortcutMonitorPausedForCapture = false;
       shortcutNotice = {
         level: "success",
         message: "Shortcuts reset to defaults.",
       };
-      toast = "";
-      await saveSettings({
-        pushToTalkShortcut: {
-          ...DEFAULT_PUSH_TO_TALK_SHORTCUT,
-          platformCodes: {
-            ...DEFAULT_PUSH_TO_TALK_SHORTCUT.platformCodes,
-            macosKeyCodes: [
-              ...shortcutMacosKeyCodes(DEFAULT_PUSH_TO_TALK_SHORTCUT),
-            ],
+      try {
+        await saveSettings({
+          pushToTalkShortcut: {
+            ...DEFAULT_PUSH_TO_TALK_SHORTCUT,
+            platformCodes: {
+              ...DEFAULT_PUSH_TO_TALK_SHORTCUT.platformCodes,
+              macosKeyCodes: [
+                ...shortcutMacosKeyCodes(DEFAULT_PUSH_TO_TALK_SHORTCUT),
+              ],
+            },
           },
-        },
-        handsFreeShortcut: {
-          ...DEFAULT_HANDS_FREE_SHORTCUT,
-          platformCodes: {
-            ...DEFAULT_HANDS_FREE_SHORTCUT.platformCodes,
-            macosKeyCodes: [...shortcutMacosKeyCodes(DEFAULT_HANDS_FREE_SHORTCUT)],
+          handsFreeShortcut: {
+            ...DEFAULT_HANDS_FREE_SHORTCUT,
+            platformCodes: {
+              ...DEFAULT_HANDS_FREE_SHORTCUT.platformCodes,
+              macosKeyCodes: [
+                ...shortcutMacosKeyCodes(DEFAULT_HANDS_FREE_SHORTCUT),
+              ],
+            },
           },
-        },
-      });
+        });
+      } catch (error) {
+        shortcutNotice = {
+          level: "error",
+          message: `Could not reset shortcuts: ${errorMessage(error)}`,
+        };
+        render();
+        return;
+      }
       if (shouldRestart) {
         try {
           await setHotkeyMonitorEnabled(true);
@@ -2605,6 +2835,23 @@ function bindAlertDismissers() {
         render();
       };
     });
+
+  document
+    .querySelectorAll<HTMLButtonElement>(".dismiss-inline-notice")
+    .forEach((button) => {
+      button.onclick = () => {
+        const key = button.dataset.dismissNotice;
+        if (!key) return;
+
+        if (key.startsWith("model:")) {
+          modelNotices.delete(key.slice("model:".length));
+        } else if (isSettingsNoticeKey(key)) {
+          clearSettingsNotice(key);
+        }
+
+        render();
+      };
+    });
 }
 
 function bindUpdateButtons() {
@@ -2631,8 +2878,9 @@ function bindExternalLinks() {
 
       try {
         await openUrl(url);
+        clearSettingsNotice("about");
       } catch (error) {
-        toast = `Could not open link: ${errorMessage(error)}`;
+        setSettingsNotice("about", `Could not open link: ${errorMessage(error)}`);
         render();
       }
     };
@@ -2773,12 +3021,15 @@ function dictionaryEntryFromInput(term: string): DictionaryEntry | null {
   const cleanTerm = collapseWhitespace(term);
 
   if (!cleanTerm) {
-    toast = "Add a Dictionary word or phrase first.";
+    setSettingsNotice("dictionary", "Add a Dictionary word or phrase first.");
     return null;
   }
 
   if (cleanTerm.length > 60) {
-    toast = "Dictionary words and phrases must be 60 characters or fewer.";
+    setSettingsNotice(
+      "dictionary",
+      "Dictionary words and phrases must be 60 characters or fewer.",
+    );
     return null;
   }
 
@@ -2834,20 +3085,26 @@ function pollModelsUntilStable() {
       const stillDownloading = snapshot.models.some(
         (model) => model.downloading,
       );
-      if (!stillDownloading && modelPollHandle !== null) {
-        window.clearInterval(modelPollHandle);
+        if (!stillDownloading && modelPollHandle !== null) {
+          window.clearInterval(modelPollHandle);
+          modelPollHandle = null;
+        if (snapshot.models.some((model) => model.error)) {
+          setSettingsNotice("models", "A model download failed.");
+        } else {
+          clearSettingsNotice("models");
+          clearAllModelNotices();
+          }
+          render();
+        }
+      } catch (error) {
+        if (modelPollHandle !== null) window.clearInterval(modelPollHandle);
         modelPollHandle = null;
-        toast = snapshot.models.some((model) => model.error)
-          ? "A model download failed."
-          : "";
+        setSettingsNotice(
+          "models",
+          `Could not refresh model status: ${errorMessage(error)}`,
+        );
         render();
       }
-    } catch (error) {
-      if (modelPollHandle !== null) window.clearInterval(modelPollHandle);
-      modelPollHandle = null;
-      toast = `Could not refresh model status: ${errorMessage(error)}`;
-      render();
-    }
   }, 1500);
 }
 

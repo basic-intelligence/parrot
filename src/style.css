@@ -1262,6 +1262,7 @@ button.general-model-card-main:hover:not(:disabled) {
 
 .general-model-card-progress,
 .general-model-card .model-error,
+.general-model-card .inline-notice,
 .general-model-card-notice {
   grid-column: 1 / -1;
 }
@@ -1373,6 +1374,33 @@ button.general-model-card-main:hover:not(:disabled) {
   color: #ffb197;
   background: var(--danger-soft);
   border-color: rgba(255, 106, 61, .34);
+}
+
+.inline-notice {
+  margin-top: 12px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: rgba(125, 74, 245, .12);
+  border: 1px solid rgba(125, 74, 245, .28);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.inline-notice.info {
+  color: #f1f0f5;
+  border-color: rgba(125, 74, 245, .28);
+}
+
+.inline-notice.error {
+  color: #ffb197;
+  background: var(--danger-soft);
+  border-color: rgba(255, 106, 61, .34);
+}
+
+.general-model-card .inline-notice {
+  margin-top: 0;
+  font-size: 12px;
 }
 
 .shortcut-list {
