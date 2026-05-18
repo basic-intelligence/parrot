@@ -80,8 +80,7 @@ pub async fn initialize_core(
                 "formats": {
                     "qwen3Chatml": CLEANUP_QWEN3_CHATML,
                     "gemma4Turns": CLEANUP_GEMMA4_TURNS
-                },
-                "cleanupTranscript": CLEANUP_DEFAULT_INSTRUCTIONS
+                }
             }
         }),
     )

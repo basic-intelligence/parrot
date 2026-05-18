@@ -10,6 +10,21 @@
     "expected": "Bonjour."
   },
   {
+    "name": "plain thinking process leak rejected",
+    "input": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Input: A raw transcript (\"Hello, how are you doing?\") and a set of instructions (cleaning rules).\n    *   Task: Apply the instructions to the entire transcript.\n    *   Constraint 1: Return only the final transformed transcript text. No labels, notes, explanations, markdown fences, or reasoning.\n    *   Constraint 2: Do not",
+    "expected": ""
+  },
+  {
+    "name": "plain thinking process with final answer",
+    "input": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Input: A raw transcript (\"hello how are you doing\") and cleanup instructions.\n\nFinal answer:\nHello, how are you doing?",
+    "expected": "Hello, how are you doing?"
+  },
+  {
+    "name": "normal thinking process phrase preserved",
+    "input": "Here is my thinking process: start simple, then revise.",
+    "expected": "Here is my thinking process: start simple, then revise."
+  },
+  {
     "name": "/no_think marker",
     "input": "/no_think\n\nOi, o meu nome é John.",
     "expected": "Oi, o meu nome é John."
@@ -55,4 +70,3 @@
     "expected": "Today I had a good day."
   }
 ]
-

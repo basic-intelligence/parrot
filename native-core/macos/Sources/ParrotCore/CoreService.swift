@@ -85,7 +85,6 @@ actor CoreService {
                 )
             }
             let cleanupPrompt = request.payload["prompts"]?["cleanupDefaultInstructions"]?.stringValue
-                ?? request.payload["prompts"]?["cleanupTranscript"]?.stringValue
                 ?? SharedResources.text(relativePath: "prompts/cleanup-default-instructions.md")
             let debugCleanupFailures = request.payload["debugCleanupFailures"]?.boolValue ?? false
             await pipeline.configure(

@@ -1411,7 +1411,7 @@ function renderRecording(settings: AppSettings, devices: AudioDevice[]) {
         <input id="pasteIntoRecordingStartWindow" type="checkbox" ${settings.pasteIntoRecordingStartWindow ? "checked" : ""}/>
         Paste into the app/window where recording started
       </label>
-      <p class="hint">Off by default: Parrot pastes into whichever text box is focused when transcription finishes. Turn this on to make Parrot try to return to the original app/window first.</p>
+      <p class="hint">Off by default: Parrot pastes into whichever text box is focused when transcription finishes. Turn this on to make Parrot return to the original app/window.</p>
     </div>
   `;
 }
@@ -2626,10 +2626,10 @@ function bindEvents() {
       }
     };
 
-  const clearHistory =
+  const clearHistoryButton =
     document.querySelector<HTMLButtonElement>("#clearHistory");
-  if (clearHistory)
-    clearHistory.onclick = () => {
+  if (clearHistoryButton)
+    clearHistoryButton.onclick = () => {
       clearHistoryBusy = false;
       confirmClearHistoryOpen = true;
       clearSettingsNotice("history");

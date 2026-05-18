@@ -28,6 +28,30 @@ enum CleanupOutputSanitizer {
         cleaned = regexReplace(#"<\|/?(?:turn|tool|tool_call|tool_response)\|?>"#, in: cleaned)
         cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        cleaned = stripLeadingOutputPrefixes(cleaned)
+        cleaned = stripLeadingGenerationArtifacts(cleaned)
+        cleaned = stripLeadingPlainTextReasoning(cleaned)
+        cleaned = stripLeadingOutputPrefixes(cleaned)
+
+        if cleaned.isEmpty {
+            return ""
+        }
+
+        cleaned = stripLeadingGenerationArtifacts(cleaned)
+
+        if cleaned.hasPrefix("\"") && cleaned.hasSuffix("\"") && cleaned.count > 1 {
+            cleaned.removeFirst()
+            cleaned.removeLast()
+        }
+
+        cleaned = stripLeadingPlainTextReasoning(cleaned)
+        cleaned = stripLeadingOutputPrefixes(cleaned)
+        cleaned = stripLeadingGenerationArtifacts(cleaned)
+
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func stripLeadingOutputPrefixes(_ text: String) -> String {
         let prefixes = [
             "Output:",
             "Cleaned text:",
@@ -41,6 +65,7 @@ enum CleanupOutputSanitizer {
             "assistant"
         ]
 
+        var cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
         var removedPrefix = true
         while removedPrefix {
             removedPrefix = false
@@ -63,16 +88,90 @@ enum CleanupOutputSanitizer {
             }
         }
 
-        cleaned = stripLeadingGenerationArtifacts(cleaned)
+        return cleaned
+    }
 
-        if cleaned.hasPrefix("\"") && cleaned.hasSuffix("\"") && cleaned.count > 1 {
-            cleaned.removeFirst()
-            cleaned.removeLast()
+    private static func stripLeadingPlainTextReasoning(_ text: String) -> String {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let match = firstRegexMatch(
+            #"^\s*(thinking process|thought process|reasoning|analysis)\s*:\s*"#,
+            in: cleaned
+        ) else {
+            return cleaned
         }
 
-        cleaned = stripLeadingGenerationArtifacts(cleaned)
+        guard let matchRange = Range(match.range, in: cleaned),
+              let headerRange = Range(match.range(at: 1), in: cleaned) else {
+            return cleaned
+        }
 
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = String(cleaned[matchRange.upperBound...])
+        if let finalOutput = finalOutputFromReasoningBody(body) {
+            return finalOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        guard isLikelyPlainTextReasoning(header: String(cleaned[headerRange]), body: body) else {
+            return cleaned
+        }
+
+        return ""
+    }
+
+    private static func finalOutputFromReasoningBody(_ body: String) -> String? {
+        guard let match = firstRegexMatch(
+            #"(?m)^\s*(?:Final answer|Final|Cleaned transcript|Cleaned text|Cleaned|Output|Answer|Response)\s*:"#,
+            in: body,
+            options: [.caseInsensitive, .anchorsMatchLines]
+        ) else {
+            return nil
+        }
+
+        guard let range = Range(match.range, in: body) else {
+            return nil
+        }
+
+        return String(body[range.lowerBound...])
+    }
+
+    private static func isLikelyPlainTextReasoning(header: String, body: String) -> Bool {
+        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedBody.isEmpty {
+            return true
+        }
+
+        if regexContains(#"(?m)^\s*\d+\.\s+"#, in: trimmedBody) {
+            return true
+        }
+
+        if regexContains(#"(?m)^\s*[*-]\s+\*\*?[A-Za-z][^:\n]{0,64}:\*\*?"#, in: trimmedBody) {
+            return true
+        }
+
+        let lowercased = trimmedBody.lowercased()
+        let modelProcessSignals = [
+            "analyze the request",
+            "input:",
+            "task:",
+            "constraint",
+            "raw transcript",
+            "cleanup rules",
+            "final transformed transcript",
+            "return only",
+            "do not drop content",
+            "the user asked",
+            "the instructions"
+        ]
+
+        if modelProcessSignals.contains(where: { lowercased.contains($0) }) {
+            return true
+        }
+
+        let normalizedHeader = header.lowercased()
+        if normalizedHeader == "thinking process" || normalizedHeader == "thought process" {
+            return trimmedBody.contains("\n") || trimmedBody.contains("**")
+        }
+
+        return false
     }
 
     private static func stripLeadingGenerationArtifacts(_ text: String) -> String {
@@ -103,6 +202,30 @@ enum CleanupOutputSanitizer {
         }
 
         return cleaned
+    }
+
+    private static func firstRegexMatch(
+        _ pattern: String,
+        in text: String,
+        options: NSRegularExpression.Options = [.caseInsensitive]
+    ) -> NSTextCheckingResult? {
+        guard let regex = try? NSRegularExpression(
+            pattern: pattern,
+            options: options
+        ) else {
+            return nil
+        }
+
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.firstMatch(in: text, options: [], range: range)
+    }
+
+    private static func regexContains(
+        _ pattern: String,
+        in text: String,
+        options: NSRegularExpression.Options = [.caseInsensitive, .anchorsMatchLines]
+    ) -> Bool {
+        firstRegexMatch(pattern, in: text, options: options) != nil
     }
 
     private static func regexReplace(
