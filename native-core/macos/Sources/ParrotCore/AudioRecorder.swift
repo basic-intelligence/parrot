@@ -6,8 +6,11 @@ import Foundation
 final class AudioRecorder {
     var preferredInputUID: String?
 
+    private let engineQueue = DispatchQueue(label: "in.basic.parrot.audio-recorder.engine")
     private var engine = AVAudioEngine()
     private var configuredDeviceID: AudioDeviceID?
+    private var isRecording = false
+    private var needsRouteRebuildAfterStop = false
     private let bufferLock = NSLock()
     private var samples: [Float] = []
 
@@ -38,18 +41,8 @@ final class AudioRecorder {
     }
 
     func start() throws {
-        resetBuffer()
-        engine.stop()
-        engine.inputNode.removeTap(onBus: 0)
-        rebuildIfNeededForCurrentDevice()
-
-        do {
-            try installTapAndStart()
-        } catch {
-            debugLog("first start failed: \(error.localizedDescription); rebuilding and retrying once")
-            rebuildEngine()
-            rebuildIfNeededForCurrentDevice(force: true)
-            try installTapAndStart()
+        try engineQueue.sync {
+            try startOnEngineQueue()
         }
     }
 
@@ -57,13 +50,67 @@ final class AudioRecorder {
         if drainMilliseconds > 0 {
             try? await Task.sleep(nanoseconds: drainMilliseconds * 1_000_000)
         }
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        return snapshot()
+
+        return engineQueue.sync {
+            stopOnEngineQueue()
+        }
     }
 
     func resetForRouteChange() {
-        rebuildEngine()
+        engineQueue.async { [weak self] in
+            guard let self else { return }
+
+            if self.isRecording {
+                self.needsRouteRebuildAfterStop = true
+                self.debugLog("CoreAudio route changed while recording; deferring engine rebuild until recording stops")
+                return
+            }
+
+            self.debugLog("CoreAudio route changed while idle; rebuilding engine")
+            self.rebuildEngine()
+        }
+    }
+
+    private func startOnEngineQueue() throws {
+        resetBuffer()
+        isRecording = false
+        engine.stop()
+        engine.inputNode.removeTap(onBus: 0)
+        rebuildIfNeededForCurrentDevice()
+
+        do {
+            try installTapAndStart()
+            isRecording = true
+            needsRouteRebuildAfterStop = false
+        } catch {
+            debugLog("first start failed: \(error.localizedDescription); rebuilding and retrying once")
+            rebuildEngine()
+            rebuildIfNeededForCurrentDevice(force: true)
+
+            do {
+                try installTapAndStart()
+                isRecording = true
+                needsRouteRebuildAfterStop = false
+            } catch {
+                isRecording = false
+                throw error
+            }
+        }
+    }
+
+    private func stopOnEngineQueue() -> [Float] {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        isRecording = false
+        let recordedSamples = snapshot()
+
+        if needsRouteRebuildAfterStop {
+            debugLog("applying deferred CoreAudio route rebuild")
+            needsRouteRebuildAfterStop = false
+            rebuildEngine()
+        }
+
+        return recordedSamples
     }
 
     private func installTapAndStart() throws {
@@ -89,6 +136,16 @@ final class AudioRecorder {
         debugLog("selectedUID=\(preferredInputUID ?? "system-default") resolvedDeviceID=\(resolvedID.map(String.init) ?? "nil")")
         if resolution.usedFallback {
             debugLog("selected input UID unavailable; falling back to system default")
+        }
+
+        let shouldUseExplicitDevice = preferredInputUID != nil && !resolution.usedFallback
+        guard shouldUseExplicitDevice else {
+            if configuredDeviceID != nil || force {
+                rebuildEngine()
+            }
+            configuredDeviceID = nil
+            debugLog("using system default CoreAudio input device")
+            return
         }
 
         guard force || resolvedID != configuredDeviceID else { return }

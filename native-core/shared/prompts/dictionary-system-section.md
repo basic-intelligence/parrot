@@ -4,4 +4,3 @@ Apply these spellings only when the transcript clearly appears to contain the te
 <dictionary_terms>
 {{ dictionary_terms }}
 </dictionary_terms>
-

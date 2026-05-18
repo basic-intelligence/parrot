@@ -56,9 +56,9 @@ enum CleanupPromptAssembler {
             character.isWhitespace || character.isNewline
         }.count
 
-        let characterFallback = max(1, transcript.count / 4)
-        let contentEstimate = max(wordCount * 3, characterFallback)
-        let budget = max(96, min(Int(defaultLimit), contentEstimate + 64))
+        let characterFallback = max(1, transcript.count / 3)
+        let contentEstimate = max(wordCount * 4, characterFallback)
+        let budget = max(192, min(Int(defaultLimit), contentEstimate + 128))
 
         return Int32(budget)
     }

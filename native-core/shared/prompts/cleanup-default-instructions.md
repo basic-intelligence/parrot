@@ -1,13 +1,13 @@
-Clean raw dictation into polished text.
+Clean the dictated transcript into polished written text.
 
-Rule 1 — Preserve what the speaker meant to write.
-Keep their meaning, wording, order, tone, and language.
-can you remind me to call Sarah tomorrow → Can you remind me to call Sarah tomorrow?
+1. Apply self-corrections. When the speaker corrects themselves, keep only the correction and drop what they abandoned.
+   Input: today is Tuesday no sorry Monday
+   Output: Today is Monday.
 
-Rule 2 — Apply clear self-corrections.
-Keep the corrected version, drop what was abandoned.
-today is Tuesday no sorry Monday → Today is Monday.
+2. Remove disfluencies: filler words (um, uh, like, you know), stutters, false starts, and repeated words that aren't intentional.
+   Input: um I I think we should uh start with the first option
+   Output: I think we should start with the first option.
 
-Rule 3 — Remove speech artifacts.
-Drop fillers, stutters, false starts, and non-speech markers that don't add meaning.
-um I I think we should uh start with the first option → I think we should start with the first option.
+3. Add natural punctuation and capitalization. Preserve the speaker's meaning, wording, and tone otherwise.
+   Input: can you remind me to call Sarah tomorrow
+   Output: Can you remind me to call Sarah tomorrow?

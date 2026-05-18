@@ -177,9 +177,9 @@ pub fn cleanup_output_token_budget(transcript: &str, default_limit: i32) -> i32 
         .split(|character: char| character.is_whitespace())
         .filter(|value| !value.is_empty())
         .count();
-    let character_fallback = (transcript.chars().count() / 4).max(1);
-    let content_estimate = (word_count * 3).max(character_fallback);
-    let budget = 96.max(default_limit.min(content_estimate as i32 + 64));
+    let character_fallback = (transcript.chars().count() / 3).max(1);
+    let content_estimate = (word_count * 4).max(character_fallback);
+    let budget = 192.max(default_limit.min(content_estimate as i32 + 128));
 
     budget
 }
@@ -237,7 +237,7 @@ mod tests {
         assert!(prompt
             .full_prompt
             .contains("<dictation_language mode=\"selected\" code=\"en\" locale=\"en-GB\" name=\"English (UK)\" />"));
-        assert_eq!(prompt.max_output_tokens, 96);
+        assert_eq!(prompt.max_output_tokens, 192);
     }
 
     #[test]

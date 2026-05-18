@@ -5,8 +5,6 @@ Use non-thinking mode. Do not output reasoning, <think>, or </think> tags.
 /no_think
 <|im_end|>
 <|im_start|>user
-/no_think
-
 {{ user_prompt }}
 <|im_end|>
 <|im_start|>assistant
