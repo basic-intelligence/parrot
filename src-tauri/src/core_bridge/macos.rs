@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context};
+use parrot_protocol::NativeCoreMethod;
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -122,6 +123,10 @@ impl CoreBridge {
         })
     }
 
+    pub fn app(&self) -> &AppHandle {
+        &self.app
+    }
+
     pub async fn reconnect(&self) -> anyhow::Result<()> {
         let _guard = self.reconnect_lock.lock().await;
 
@@ -176,7 +181,10 @@ impl CoreBridge {
             }
         };
 
-        if let Err(error) = launch_native_core(&app_bundle, &socket_arg).await {
+        let launcher = MacOsHelperAppLauncher {
+            app_bundle: app_bundle.clone(),
+        };
+        if let Err(error) = launcher.launch(&socket_arg).await {
             socket_path.cleanup();
             return Err(error);
         }
@@ -243,7 +251,7 @@ impl CoreBridge {
         Ok(write_half)
     }
 
-    pub async fn request(&self, method: &str, payload: Value) -> anyhow::Result<Value> {
+    pub async fn request(&self, method: NativeCoreMethod, payload: Value) -> anyhow::Result<Value> {
         let id = Uuid::new_v4().to_string();
         let (tx, rx) = oneshot::channel();
         let request_generation = self.generation.load(Ordering::SeqCst);
@@ -255,7 +263,9 @@ impl CoreBridge {
             },
         );
 
-        let line = json!({ "id": id, "method": method, "payload": payload }).to_string() + "\n";
+        let method_name = method.as_str();
+        let line =
+            json!({ "id": id, "method": method_name, "payload": payload }).to_string() + "\n";
         let write_result = {
             let mut writer = self.writer.lock().await;
             match writer.as_mut() {
@@ -268,8 +278,9 @@ impl CoreBridge {
             Some(Ok(())) => {}
             Some(Err(error)) => {
                 self.pending.lock().await.remove(&id);
-                return Err(error)
-                    .with_context(|| format!("failed to write native core request `{method}`"));
+                return Err(error).with_context(|| {
+                    format!("failed to write native core request `{method_name}`")
+                });
             }
             None => {
                 self.pending.lock().await.remove(&id);
@@ -282,13 +293,35 @@ impl CoreBridge {
             Ok(Err(_)) => Err(anyhow!("native core response channel closed")),
             Err(_) => {
                 self.pending.lock().await.remove(&id);
-                Err(anyhow!("native core timed out on {method}"))
+                Err(anyhow!("native core timed out on {method_name}"))
             }
         }
     }
 }
 
-async fn launch_native_core(app_bundle: &PathBuf, socket_arg: &str) -> anyhow::Result<()> {
+trait NativeCoreLauncher {
+    async fn launch(&self, socket_path: &str) -> anyhow::Result<()>;
+}
+
+struct MacOsHelperAppLauncher {
+    app_bundle: PathBuf,
+}
+
+impl NativeCoreLauncher for MacOsHelperAppLauncher {
+    async fn launch(&self, socket_path: &str) -> anyhow::Result<()> {
+        launch_macos_helper_app(&self.app_bundle, socket_path).await
+    }
+}
+
+/// Future launcher placeholder. Do not implement Windows sidecar launch in this foundation pass.
+#[allow(dead_code)]
+struct WindowsSidecarLauncher;
+
+/// Future launcher placeholder. Do not implement Linux sidecar launch in this foundation pass.
+#[allow(dead_code)]
+struct LinuxSidecarLauncher;
+
+async fn launch_macos_helper_app(app_bundle: &PathBuf, socket_arg: &str) -> anyhow::Result<()> {
     if std::env::var_os("PARROT_CORE_DIRECT_LAUNCH").is_some() {
         let executable = app_bundle
             .join("Contents")

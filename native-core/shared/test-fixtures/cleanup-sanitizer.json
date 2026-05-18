@@ -1,0 +1,58 @@
+[
+  {
+    "name": "orphan think closers",
+    "input": "</think>\n\n</think>\n\nHola, me llamo John.",
+    "expected": "Hola, me llamo John."
+  },
+  {
+    "name": "full think blocks",
+    "input": "<think>\nreasoning\n</think>\n\nBonjour.",
+    "expected": "Bonjour."
+  },
+  {
+    "name": "/no_think marker",
+    "input": "/no_think\n\nOi, o meu nome é John.",
+    "expected": "Oi, o meu nome é John."
+  },
+  {
+    "name": "multilingual output",
+    "input": "今日はいい天気です。",
+    "expected": "今日はいい天気です。"
+  },
+  {
+    "name": "Gemma turn tokens",
+    "input": "<|turn>model\nHello, John.<turn|>",
+    "expected": "Hello, John."
+  },
+  {
+    "name": "Gemma thought channel",
+    "input": "<|channel>thought\nreasoning\n<channel|>Hello, John.",
+    "expected": "Hello, John."
+  },
+  {
+    "name": "leading greater-than artifact",
+    "input": ">Today I had a good day.",
+    "expected": "Today I had a good day."
+  },
+  {
+    "name": "leading bracket artifact",
+    "input": "] Today I had a good day.",
+    "expected": "Today I had a good day."
+  },
+  {
+    "name": "internal greater-than symbol preserved",
+    "input": "The value is greater than 10, so write x > 10.",
+    "expected": "The value is greater than 10, so write x > 10."
+  },
+  {
+    "name": "intentional bullet list preserved",
+    "input": "- Milk\n- Eggs",
+    "expected": "- Milk\n- Eggs"
+  },
+  {
+    "name": "thought channel then leading artifact",
+    "input": "<|channel>thought\nreasoning\n<channel|>>Today I had a good day.",
+    "expected": "Today I had a good day."
+  }
+]
+

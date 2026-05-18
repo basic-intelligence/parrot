@@ -183,12 +183,28 @@ struct DictionaryEntry: Codable, Sendable, Equatable {
     var term: String
 }
 
+struct ShortcutPlatformCodes: Codable, Sendable, Equatable {
+    var macosKeyCodes: [UInt16]?
+    var windowsVirtualKeys: [UInt16]?
+    var linuxKeyCodes: [UInt32]?
+}
+
+struct ShortcutChord: Codable, Sendable {
+    var modifiers: [String]
+    var key: JSONValue?
+}
+
 struct ShortcutSettings: Codable, Sendable {
     var displayName: String
-    var macosKeyCodes: [UInt16]
     var mode: String
     var enabled: Bool
     var doubleTapToggle: Bool
+    var chord: ShortcutChord?
+    var platformCodes: ShortcutPlatformCodes
+
+    var macosKeyCodes: [UInt16] {
+        platformCodes.macosKeyCodes ?? []
+    }
 
     init(
         displayName: String,
@@ -198,23 +214,109 @@ struct ShortcutSettings: Codable, Sendable {
         doubleTapToggle: Bool = false
     ) {
         self.displayName = displayName
-        self.macosKeyCodes = macosKeyCodes
         self.mode = mode
         self.enabled = enabled
         self.doubleTapToggle = doubleTapToggle
+        self.chord = Self.inferChord(macosKeyCodes: macosKeyCodes, displayName: displayName)
+        self.platformCodes = ShortcutPlatformCodes(
+            macosKeyCodes: macosKeyCodes,
+            windowsVirtualKeys: nil,
+            linuxKeyCodes: nil
+        )
     }
 
     enum CodingKeys: String, CodingKey {
-        case displayName, macosKeyCodes, mode, enabled, doubleTapToggle
+        case displayName, macosKeyCodes, mode, enabled, doubleTapToggle, chord, platformCodes
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         displayName = try container.decode(String.self, forKey: .displayName)
-        macosKeyCodes = try container.decode([UInt16].self, forKey: .macosKeyCodes)
         mode = try container.decode(String.self, forKey: .mode)
         enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         doubleTapToggle = try container.decodeIfPresent(Bool.self, forKey: .doubleTapToggle) ?? false
+        let legacyMacosKeyCodes = try container.decodeIfPresent([UInt16].self, forKey: .macosKeyCodes)
+        let decodedPlatformCodes = try container.decodeIfPresent(ShortcutPlatformCodes.self, forKey: .platformCodes)
+        platformCodes = decodedPlatformCodes ?? ShortcutPlatformCodes(
+            macosKeyCodes: legacyMacosKeyCodes,
+            windowsVirtualKeys: nil,
+            linuxKeyCodes: nil
+        )
+        if platformCodes.macosKeyCodes == nil, let legacyMacosKeyCodes {
+            platformCodes.macosKeyCodes = legacyMacosKeyCodes
+        }
+        chord = try container.decodeIfPresent(ShortcutChord.self, forKey: .chord)
+            ?? Self.inferChord(macosKeyCodes: platformCodes.macosKeyCodes ?? [], displayName: displayName)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(displayName, forKey: .displayName)
+        try container.encode(mode, forKey: .mode)
+        try container.encode(enabled, forKey: .enabled)
+        try container.encode(doubleTapToggle, forKey: .doubleTapToggle)
+        try container.encodeIfPresent(chord, forKey: .chord)
+        try container.encode(platformCodes, forKey: .platformCodes)
+    }
+
+    private static func inferChord(macosKeyCodes: [UInt16], displayName: String) -> ShortcutChord? {
+        guard !macosKeyCodes.isEmpty else { return nil }
+        var modifiers: [String] = []
+        var key: JSONValue?
+
+        for code in macosKeyCodes {
+            switch code {
+            case 55, 54: modifiers.append("command")
+            case 59, 62: modifiers.append("control")
+            case 58, 61: modifiers.append("option")
+            case 56, 60: modifiers.append("shift")
+            case 63: modifiers.append("fn")
+            case 49: key = .string("space")
+            case 36, 76: key = .string("return")
+            case 48: key = .string("tab")
+            case 53: key = .string("escape")
+            case 51, 117: key = .string("delete")
+            case 123: key = .string("arrowLeft")
+            case 124: key = .string("arrowRight")
+            case 125: key = .string("arrowDown")
+            case 126: key = .string("arrowUp")
+            default: break
+            }
+        }
+
+        if modifiers.isEmpty, key == nil {
+            return displayNameToChord(displayName)
+        }
+
+        return ShortcutChord(modifiers: modifiers, key: key)
+    }
+
+    private static func displayNameToChord(_ displayName: String) -> ShortcutChord? {
+        let parts = displayName.split(separator: "+").map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        guard !parts.isEmpty else { return nil }
+
+        var modifiers: [String] = []
+        var key: JSONValue?
+        for part in parts {
+            switch part {
+            case "cmd", "command": modifiers.append("command")
+            case "control", "ctrl": modifiers.append("control")
+            case "option": modifiers.append("option")
+            case "alt": modifiers.append("alt")
+            case "shift": modifiers.append("shift")
+            case "fn": modifiers.append("fn")
+            case "space": key = .string("space")
+            case "return", "enter": key = .string("return")
+            case "tab": key = .string("tab")
+            case "escape", "esc": key = .string("escape")
+            default:
+                if part.count == 1 { key = .object(["character": .string(part)]) }
+            }
+        }
+
+        return ShortcutChord(modifiers: modifiers, key: key)
     }
 }
 
@@ -239,7 +341,28 @@ struct ModelStatusDTO: Codable, Sendable {
     let error: String?
 }
 
+enum PermissionKindDTO: String, Codable, Sendable {
+    case microphone
+    case accessibility
+    case inputMonitoring
+    case globalShortcut
+    case paste
+    case focusedTextContext
+}
+
+struct PermissionRequirementDTO: Codable, Sendable {
+    let kind: PermissionKindDTO
+    let title: String
+    let description: String
+    let state: PermissionState
+    let required: Bool
+    let requestable: Bool
+    let opensSettings: Bool
+}
+
 struct PermissionSnapshotDTO: Codable, Sendable {
+    let requirements: [PermissionRequirementDTO]
+    let allRequiredGranted: Bool
     let microphone: PermissionState
     let accessibility: PermissionState
     let inputMonitoring: PermissionState
@@ -250,4 +373,14 @@ struct RecordingResultDTO: Codable, Sendable {
     let raw: String
     let cleaned: String
     let audioDurationSeconds: Double
+}
+
+struct NativeCorePathsDTO: Codable, Sendable {
+    let appDataDir: String
+    let modelsDir: String
+    let speechModelsDir: String
+    let cleanupModelsDir: String
+    let resourcesDir: String
+    let sharedResourcesDir: String
+    let tempDir: String
 }

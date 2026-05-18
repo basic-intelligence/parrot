@@ -1,0 +1,80 @@
+[
+  {
+    "name": "english -> speech",
+    "settings": {
+      "dictationLanguageMode": "english",
+      "dictationLanguageCode": null,
+      "cleanupModelId": "cleanup"
+    },
+    "usesEnglishRoute": true,
+    "speechModelSlot": "speech",
+    "decodeLanguageCode": "en",
+    "selectedLanguageXml": "<dictation_language mode=\"selected\" code=\"en\" name=\"English\" />",
+    "cleanupModelId": "cleanup"
+  },
+  {
+    "name": "en-GB -> speech with locale en-GB",
+    "settings": {
+      "dictationLanguageMode": "specific",
+      "dictationLanguageCode": "en-GB",
+      "cleanupModelId": "cleanup"
+    },
+    "usesEnglishRoute": true,
+    "speechModelSlot": "speech",
+    "decodeLanguageCode": "en",
+    "selectedLanguageXml": "<dictation_language mode=\"selected\" code=\"en\" locale=\"en-GB\" name=\"English (UK)\" />",
+    "cleanupModelId": "cleanup"
+  },
+  {
+    "name": "es -> speech-multilingual",
+    "settings": {
+      "dictationLanguageMode": "specific",
+      "dictationLanguageCode": "es",
+      "cleanupModelId": "cleanup"
+    },
+    "usesEnglishRoute": false,
+    "speechModelSlot": "speech-multilingual",
+    "decodeLanguageCode": "es",
+    "selectedLanguageXml": "<dictation_language mode=\"selected\" code=\"es\" name=\"Spanish\" />",
+    "cleanupModelId": "cleanup"
+  },
+  {
+    "name": "pt-BR -> speech-multilingual with speech code pt and locale pt-BR",
+    "settings": {
+      "dictationLanguageMode": "specific",
+      "dictationLanguageCode": "pt-BR",
+      "cleanupModelId": "cleanup"
+    },
+    "usesEnglishRoute": false,
+    "speechModelSlot": "speech-multilingual",
+    "decodeLanguageCode": "pt",
+    "selectedLanguageXml": "<dictation_language mode=\"selected\" code=\"pt\" locale=\"pt-BR\" name=\"Portuguese (Brazil)\" />",
+    "cleanupModelId": "cleanup"
+  },
+  {
+    "name": "detect -> speech-multilingual",
+    "settings": {
+      "dictationLanguageMode": "detect",
+      "dictationLanguageCode": null,
+      "cleanupModelId": "cleanup"
+    },
+    "usesEnglishRoute": false,
+    "speechModelSlot": "speech-multilingual",
+    "decodeLanguageCode": null,
+    "selectedLanguageXml": "<dictation_language mode=\"detected\" name=\"unknown\" />",
+    "cleanupModelId": "cleanup"
+  },
+  {
+    "name": "cleanup-gemma-4-e2b -> selected cleanup model",
+    "settings": {
+      "dictationLanguageMode": "english",
+      "dictationLanguageCode": null,
+      "cleanupModelId": "cleanup-gemma-4-e2b"
+    },
+    "usesEnglishRoute": true,
+    "speechModelSlot": "speech",
+    "decodeLanguageCode": "en",
+    "selectedLanguageXml": "<dictation_language mode=\"selected\" code=\"en\" name=\"English\" />",
+    "cleanupModelId": "cleanup-gemma-4-e2b"
+  }
+]

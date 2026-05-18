@@ -30,6 +30,7 @@ dist/
 .vite-temp/
 
 # Tauri / Rust
+target/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/.tauri/

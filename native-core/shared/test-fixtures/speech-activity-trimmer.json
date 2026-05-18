@@ -1,0 +1,29 @@
+[
+  {
+    "name": "trims leading and trailing silence",
+    "samples": [0, 0, 0, 0.05, 0.05, 0.05, 0, 0],
+    "sampleRateHz": 100,
+    "frameMilliseconds": 10,
+    "paddingMilliseconds": 10,
+    "minimumSpeechMilliseconds": 10,
+    "expected": [0, 0.05, 0.05, 0.05, 0]
+  },
+  {
+    "name": "returns empty for silence only",
+    "samples": [0, 0, 0, 0],
+    "sampleRateHz": 100,
+    "frameMilliseconds": 10,
+    "paddingMilliseconds": 10,
+    "minimumSpeechMilliseconds": 10,
+    "expected": []
+  },
+  {
+    "name": "leaves short buffers alone",
+    "samples": [0.02, 0.02],
+    "sampleRateHz": 100,
+    "frameMilliseconds": 50,
+    "paddingMilliseconds": 10,
+    "minimumSpeechMilliseconds": 10,
+    "expected": [0.02, 0.02]
+  }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "name": "Qwen prompt",
+    "promptFormat": "qwen3Chatml",
+    "cleanupRules": "Uppercase it.",
+    "dictionaryEntries": [],
+    "rawTranscript": "hello world",
+    "language": {
+      "mode": "selected",
+      "code": "en",
+      "locale": "en-GB",
+      "name": "English (UK)"
+    },
+    "defaultOutputTokens": 512,
+    "expectedContains": [
+      "<|im_start|>system",
+      "Uppercase it.",
+      "<dictation_language mode=\"selected\" code=\"en\" locale=\"en-GB\" name=\"English (UK)\" />",
+      "<raw_transcript>\nhello world\n</raw_transcript>"
+    ]
+  },
+  {
+    "name": "Gemma prompt with dictionary terms",
+    "promptFormat": "gemma4Turns",
+    "cleanupRules": "",
+    "dictionaryEntries": [
+      {
+        "id": "entry-1",
+        "term": "Project Atlas"
+      }
+    ],
+    "rawTranscript": "project atlas status",
+    "language": {
+      "mode": "detected",
+      "code": "es",
+      "locale": null,
+      "name": null
+    },
+    "defaultOutputTokens": 256,
+    "expectedContains": [
+      "<|turn>system",
+      "- Project Atlas",
+      "Clean dictated text for punctuation, formatting, self-corrections, and readability.",
+      "<dictation_language mode=\"detected\" code=\"es\" />"
+    ]
+  }
+]

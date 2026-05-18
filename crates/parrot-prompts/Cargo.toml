@@ -1,0 +1,12 @@
+[package]
+name = "parrot-prompts"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+
+[dependencies]
+parrot-language = { path = "../parrot-language" }
+parrot-models = { path = "../parrot-models" }
+parrot-protocol = { path = "../parrot-protocol" }
+serde = { workspace = true }
+serde_json = { workspace = true }

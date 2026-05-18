@@ -157,11 +157,13 @@ enum DictationRouting {
         case .specific:
             let code = decodeLanguageCode(for: settings)
             let locale = selectedLocaleCode(for: settings, speechCode: code)
+            let selectedCode = LanguageCatalog.canonicalCode(for: settings.dictationLanguageCode)
+            let name = selectedCode.flatMap { LanguageCatalog.entry(for: $0)?.name }
             return DictationLanguageMetadata(
                 mode: "selected",
                 code: code,
                 locale: locale,
-                name: nil
+                name: name
             )
         case .detect:
             return .unknown

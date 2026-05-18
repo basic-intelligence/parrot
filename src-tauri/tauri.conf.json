@@ -3,8 +3,8 @@
   "productName": "Parrot",
   "identifier": "in.basic.parrot",
   "build": {
-    "beforeDevCommand": "npm run build:core:mac && npm run dev:ui",
-    "beforeBuildCommand": "swift scripts/render-dmg-background.swift src-tauri/assets/dmg-background.png && npm run build:core:mac && npm run build:ui",
+    "beforeDevCommand": "npm run before:dev",
+    "beforeBuildCommand": "npm run before:build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
@@ -49,10 +49,6 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "app",
-      "dmg"
-    ],
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
@@ -61,28 +57,13 @@
       "icons/icon.icns",
       "icons/icon.png"
     ],
-    "macOS": {
-      "minimumSystemVersion": "13.3",
-      "entitlements": "./ParrotCore.entitlements",
-      "files": {
-        "Helpers/Parrot.app": "./binaries/Parrot.app"
-      },
-      "dmg": {
-        "background": "assets/dmg-background.png",
-        "windowSize": {
-          "width": 760,
-          "height": 560
-        },
-        "appPosition": {
-          "x": 166,
-          "y": 292
-        },
-        "applicationFolderPosition": {
-          "x": 594,
-          "y": 292
-        }
-      }
-    }
+    "resources": [
+      "../native-core/shared/languages.json",
+      "../native-core/shared/models.json",
+      "../native-core/shared/prompts/",
+      "../native-core/shared/sounds.json",
+      "../native-core/shared/sounds/"
+    ]
   },
   "plugins": {
     "updater": {

@@ -1,0 +1,7 @@
+{
+  "recordingStart": "sounds/recording-start.wav",
+  "recordingSuccess": "sounds/recording-success.wav",
+  "recordingCancel": "sounds/recording-cancel.wav",
+  "recordingError": "sounds/recording-error.wav"
+}
+

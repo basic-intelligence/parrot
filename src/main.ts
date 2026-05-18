@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -10,68 +9,47 @@ import {
 } from "@tauri-apps/plugin-updater";
 import packageJson from "../package.json";
 import {
-  MODEL_IDS,
+  captureShortcut,
+  clearHistory,
+  deleteHistoryItem,
+  deleteModel,
+  downloadModel,
+  getAppSnapshot,
+  permissionStatuses,
+  requestPermission,
+  saveRecordingResult,
+  saveSettings as saveSettingsApi,
+  setHotkeyMonitorEnabled,
+  setLaunchAtLogin,
+  setUpdateBadge as setUpdateBadgeApi,
+  startTestDictation,
+  stopTestDictation,
+  warmModels,
+} from "./api";
+import {
   SPECIFIC_LANGUAGE_OPTIONS,
-  selectedCleanupModelId,
   type CleanupModelId,
   type DictationLanguageMode,
   languageByCode,
   languageDisplayValue,
-  requiredModelIds,
-  usesEnglishRoute,
 } from "./languages";
+import type {
+  AppSettings,
+  AudioDevice,
+  DictionaryEntry,
+  HistoryEntry,
+  ModelStatus,
+  PermissionKind,
+  PermissionRequirement,
+  PermissionSnapshot,
+  PermissionState,
+  RecordingEvent,
+  ShortcutKey,
+  ShortcutSettings,
+  Snapshot,
+} from "./types";
 import "./style.css";
 
-type AudioDevice = { uid: string; name: string; isDefault: boolean };
-type ModelStatus = {
-  id: string;
-  role: "speech" | "cleanup";
-  displayName: string;
-  subtitle: string;
-  expectedBytes: number;
-  localBytes: number;
-  progressBytes: number;
-  progressTotalBytes: number;
-  downloaded: boolean;
-  downloading: boolean;
-  required: boolean;
-  error: string | null;
-};
-type HistoryEntry = {
-  id: string;
-  createdAt: string;
-  audioDurationSeconds: number;
-  rawTranscription: string | null;
-  cleanedTranscription: string | null;
-};
-type DictionaryEntry = {
-  id: string;
-  term: string;
-};
-type AppSettings = {
-  selectedInputUid: string | null;
-  pushToTalkShortcut: ShortcutSettings;
-  handsFreeShortcut: ShortcutSettings;
-  dictationLanguageMode: DictationLanguageMode;
-  dictationLanguageCode: string | null;
-  cleanupModelId: string;
-  cleanupEnabled: boolean;
-  cleanupPrompt: string;
-  dictionaryEntries: DictionaryEntry[];
-  playSounds: boolean;
-  pasteIntoRecordingStartWindow: boolean;
-  historyEnabled: boolean;
-  launchAtLogin: boolean;
-  onboardingCompleted: boolean;
-  inputMonitoringPermissionShownInOnboarding: boolean;
-};
-type ShortcutSettings = {
-  displayName: string;
-  macosKeyCodes: number[];
-  mode: "hold" | "toggle";
-  enabled: boolean;
-  doubleTapToggle: boolean;
-};
 type ShortcutSettingKey = "pushToTalkShortcut" | "handsFreeShortcut";
 type ShortcutNotice = {
   level: "info" | "success" | "error";
@@ -80,27 +58,6 @@ type ShortcutNotice = {
 type CleanupModelSelectionNotice = {
   id: CleanupModelId;
   message: string;
-};
-type Snapshot = {
-  settings: AppSettings;
-  devices: AudioDevice[];
-  models: ModelStatus[];
-  history: HistoryEntry[];
-  permissions: PermissionSnapshot;
-  defaultCleanupPrompt: string;
-};
-type PermissionState =
-  | "granted"
-  | "denied"
-  | "notDetermined"
-  | "unknown"
-  | string;
-type PermissionKind = "microphone" | "accessibility" | "inputMonitoring";
-type PermissionSnapshot = {
-  microphone: PermissionState;
-  accessibility: PermissionState;
-  inputMonitoring: PermissionState;
-  allGranted: boolean;
 };
 type PermissionRowOptions = {
   hideRefreshWhenGranted?: boolean;
@@ -112,12 +69,6 @@ type UpdateStatus = "idle" | "current" | "available" | "error";
 type UpdateDownloadProgress = {
   downloadedBytes: number;
   totalBytes: number | null;
-};
-type RecordingEvent = {
-  raw: string;
-  cleaned: string;
-  audioDurationSeconds: number;
-  kind?: string;
 };
 type MainTab = "general" | "recording" | "cleanup" | "history" | "about";
 type SetupStep = "permissions" | "language" | "models";
@@ -245,18 +196,28 @@ const modelFinalizingStartedAt = new Map<string, number>();
 
 const DEFAULT_PUSH_TO_TALK_SHORTCUT: ShortcutSettings = {
   displayName: "Fn",
-  macosKeyCodes: [63],
   mode: "hold",
   enabled: true,
   doubleTapToggle: false,
+  chord: { modifiers: ["fn"], key: null },
+  platformCodes: {
+    macosKeyCodes: [63],
+    windowsVirtualKeys: null,
+    linuxKeyCodes: null,
+  },
 };
 
 const DEFAULT_HANDS_FREE_SHORTCUT: ShortcutSettings = {
   displayName: "Control + Space",
-  macosKeyCodes: [59, 49],
   mode: "toggle",
   enabled: true,
   doubleTapToggle: false,
+  chord: { modifiers: ["control"], key: "space" },
+  platformCodes: {
+    macosKeyCodes: [59, 49],
+    windowsVirtualKeys: null,
+    linuxKeyCodes: null,
+  },
 };
 
 const APP_VERSION = packageJson.version;
@@ -291,9 +252,7 @@ async function installEventListeners() {
   await listen<RecordingEvent>("parrot:recording-finished", async (event) => {
     try {
       if (event.payload.kind !== "test") {
-        snapshot = await invoke<Snapshot>("save_recording_result", {
-          result: event.payload,
-        });
+        snapshot = await saveRecordingResult(event.payload);
         if (activeTab === "history") render();
       } else {
         await load();
@@ -345,7 +304,7 @@ async function installEventListeners() {
 }
 
 async function load() {
-  let next = await invoke<Snapshot>("get_app_snapshot");
+  let next = await getAppSnapshot();
   const firstLoad = snapshot === null;
 
   if (
@@ -353,9 +312,7 @@ async function load() {
     setupRequirementsComplete(next) &&
     !next.settings.onboardingCompleted
   ) {
-    next = await invoke<Snapshot>("save_settings", {
-      settings: { ...next.settings, onboardingCompleted: true },
-    });
+    next = await saveSettingsApi({ ...next.settings, onboardingCompleted: true });
   }
 
   snapshot = next;
@@ -365,7 +322,7 @@ async function load() {
 async function saveSettings(partial: Partial<AppSettings>) {
   if (!snapshot) return;
   const next = { ...snapshot.settings, ...partial };
-  snapshot = await invoke<Snapshot>("save_settings", { settings: next });
+  snapshot = await saveSettingsApi(next);
   render();
 }
 
@@ -436,7 +393,7 @@ async function maybeRunAutomaticUpdateCheck() {
 
 async function setUpdateBadge(available: boolean, version: string | null) {
   try {
-    await invoke("set_update_badge", { available, version });
+    await setUpdateBadgeApi(available, version);
   } catch (error) {
     console.debug("Could not update tray badge", error);
   }
@@ -503,22 +460,18 @@ function acceptUpdateDownloadEvent(event: DownloadEvent) {
   render();
 }
 
-function requiredModelsDownloaded(models: ModelStatus[], settings: AppSettings) {
+function requiredModelsDownloaded(models: ModelStatus[]) {
   const requiredByBackend = models.filter((model) => model.required);
-  if (requiredByBackend.length > 0) {
-    return requiredByBackend.every((model) => model.downloaded);
-  }
-
-  const required = requiredModelIds(settings);
-  return required.every((id) =>
-    Boolean(models.find((model) => model.id === id)?.downloaded),
+  return (
+    requiredByBackend.length > 0 &&
+    requiredByBackend.every((model) => model.downloaded)
   );
 }
 
 function setupRequirementsComplete(value: Snapshot) {
   return (
     setupPermissionsComplete(value.permissions, value.settings) &&
-    requiredModelsDownloaded(value.models, value.settings)
+    requiredModelsDownloaded(value.models)
   );
 }
 
@@ -535,16 +488,109 @@ function setupPermissionsComplete(
   permissions: PermissionSnapshot,
   settings: AppSettings | null | undefined,
 ) {
+  const requirements = permissionRequirementsForDisplay(permissions, settings);
+  if (requirements.length > 0) {
+    const requiredGranted = requirements
+      .filter((requirement) => requirement.required)
+      .every((requirement) => requirement.state === "granted");
+    const inputMonitoringReady =
+      !inputMonitoringShownInOnboarding(settings) ||
+      permissionState(permissions, "inputMonitoring") === "granted";
+    return requiredGranted && inputMonitoringReady;
+  }
+
   return (
-    permissions.microphone === "granted" &&
-    permissions.accessibility === "granted" &&
+    permissionState(permissions, "microphone") === "granted" &&
+    permissionState(permissions, "accessibility") === "granted" &&
     (!inputMonitoringShownInOnboarding(settings) ||
-      permissions.inputMonitoring === "granted")
+      permissionState(permissions, "inputMonitoring") === "granted")
   );
 }
 
 function shouldShowInputMonitoringPermission(settings: AppSettings) {
   return settings.inputMonitoringPermissionShownInOnboarding;
+}
+
+function permissionsAllGranted(permissions: PermissionSnapshot) {
+  if (typeof permissions.allRequiredGranted === "boolean") {
+    return permissions.allRequiredGranted;
+  }
+  if (typeof permissions.allGranted === "boolean") {
+    return permissions.allGranted;
+  }
+  return (
+    permissionState(permissions, "microphone") === "granted" &&
+    permissionState(permissions, "accessibility") === "granted"
+  );
+}
+
+function permissionState(
+  permissions: PermissionSnapshot,
+  kind: PermissionKind,
+): PermissionState {
+  const fromRequirement = permissions.requirements?.find(
+    (requirement) => requirement.kind === kind,
+  )?.state;
+  if (fromRequirement) return fromRequirement;
+
+  if (kind === "microphone") return permissions.microphone ?? "unknown";
+  if (kind === "accessibility") return permissions.accessibility ?? "unknown";
+  if (kind === "inputMonitoring")
+    return permissions.inputMonitoring ?? "unknown";
+
+  return "unknown";
+}
+
+function permissionRequirementsForDisplay(
+  permissions: PermissionSnapshot,
+  settings: AppSettings | null | undefined,
+): PermissionRequirement[] {
+  const showInputMonitoring = inputMonitoringShownInOnboarding(settings);
+  const dynamic = permissions.requirements ?? [];
+  const requirements = dynamic.length > 0 ? dynamic : fallbackPermissionRequirements(permissions);
+
+  return requirements.filter(
+    (requirement) =>
+      requirement.kind !== "inputMonitoring" ||
+      requirement.required ||
+      showInputMonitoring,
+  );
+}
+
+function fallbackPermissionRequirements(
+  permissions: PermissionSnapshot,
+): PermissionRequirement[] {
+  return [
+    {
+      kind: "microphone",
+      title: "Microphone",
+      description: "Record your voice locally for dictation.",
+      state: permissionState(permissions, "microphone"),
+      required: true,
+      requestable: true,
+      opensSettings: true,
+    },
+    {
+      kind: "accessibility",
+      title: "Accessibility",
+      description:
+        "Consume the Parrot shortcut event and paste the finished text.",
+      state: permissionState(permissions, "accessibility"),
+      required: true,
+      requestable: true,
+      opensSettings: true,
+    },
+    {
+      kind: "inputMonitoring",
+      title: "Input Monitoring",
+      description:
+        "Some Macs require this so Parrot Core can listen for your shortcut while you use other apps.",
+      state: permissionState(permissions, "inputMonitoring"),
+      required: false,
+      requestable: true,
+      opensSettings: true,
+    },
+  ];
 }
 
 async function persistInputMonitoringShownInOnboarding() {
@@ -563,7 +609,7 @@ async function persistInputMonitoringShownInOnboarding() {
   snapshot = { ...snapshot, settings };
 
   try {
-    snapshot = await invoke<Snapshot>("save_settings", { settings });
+    snapshot = await saveSettingsApi(settings);
   } catch (error) {
     console.warn("Could not save Input Monitoring onboarding state", error);
   }
@@ -772,7 +818,7 @@ function setupStepComplete(current: Snapshot, step: SetupStep) {
   if (step === "permissions")
     return setupPermissionsComplete(current.permissions, current.settings);
   if (step === "language") return true;
-  return requiredModelsDownloaded(current.models, current.settings);
+  return requiredModelsDownloaded(current.models);
 }
 
 function renderSetupProgress() {
@@ -801,6 +847,10 @@ function renderSetupProgress() {
 
 function renderSetupStepContent(current: Snapshot) {
   const permissions = current.permissions;
+  const permissionRows = permissionRequirementsForDisplay(
+    permissions,
+    current.settings,
+  );
   const showInputMonitoring = inputMonitoringShownInOnboarding(
     current.settings,
   );
@@ -813,13 +863,7 @@ function renderSetupStepContent(current: Snapshot) {
           <p>${showInputMonitoring ? "Microphone records dictation. Accessibility lets Parrot Core consume the shortcut and paste text. This Mac also needs Input Monitoring for shortcut listening." : "Microphone records dictation. Accessibility lets Parrot Core consume the shortcut and paste the finished text."}</p>
         </div>
         <div class="permission-list">
-          ${renderPermissionRow("microphone", "Microphone", "Record your voice locally for dictation.", permissions.microphone, { variant: "setup" })}
-          ${renderPermissionRow("accessibility", "Accessibility", "Consume the Parrot shortcut event and paste the finished text.", permissions.accessibility, { variant: "setup" })}
-          ${
-            showInputMonitoring
-              ? renderPermissionRow("inputMonitoring", "Input Monitoring", "Some Macs require this so Parrot Core can listen for your shortcut while you use other apps.", permissions.inputMonitoring, { variant: "setup" })
-              : ""
-          }
+          ${permissionRows.map((requirement) => renderPermissionRequirement(requirement, { variant: "setup" })).join("")}
         </div>
       </section>
     `;
@@ -974,6 +1018,19 @@ function renderPermissionRow(
       </div>
     </article>
   `;
+}
+
+function renderPermissionRequirement(
+  requirement: PermissionRequirement,
+  options: PermissionRowOptions = {},
+) {
+  return renderPermissionRow(
+    requirement.kind,
+    requirement.title,
+    requirement.description,
+    requirement.state,
+    options,
+  );
 }
 
 function scrollPageToTop() {
@@ -1146,13 +1203,9 @@ function renderLocalModelsSection(
   context: "setup" | "general",
 ) {
   const cleanupHeading = context === "setup" ? "Cleanup (choose one)" : "Cleanup";
-  const speechModelId =
-    usesEnglishRoute(settings)
-      ? MODEL_IDS.englishSpeech
-      : MODEL_IDS.multilingualSpeech;
   const speechModel = models.find(
-    (model) => model.id === speechModelId,
-  );
+    (model) => model.role === "speech" && model.required,
+  ) ?? models.find((model) => model.role === "speech");
 
   return `
     <section class="${context === "setup" ? "setup-section" : "settings-section"}">
@@ -1261,7 +1314,7 @@ function renderCleanupModelChooser(
   models: ModelStatus[],
   context: "setup" | "general",
 ) {
-  const selected = selectedCleanupModelId(settings);
+  const selected = settings.cleanupModelId;
   const options = cleanupModelsForSettings(models);
   const ariaLabel = context === "setup" ? "Cleanup model, choose one" : "Cleanup model";
 
@@ -1378,14 +1431,15 @@ function renderShortcutSettingRow(
 ) {
   const capturing = shortcutCaptureTarget === target;
   const captureInProgress = shortcutCaptureTarget !== null;
-  const preview = capturing ? "" : shortcut.displayName;
+  const displayName = shortcutDisplayName(shortcut);
+  const preview = capturing ? "" : displayName;
   const keycaps =
     shortcutKeycaps(preview) ||
     '<span class="shortcut-placeholder">Press shortcut…</span>';
   const help = capturing ? shortcutCaptureInlineHelp(target) : "";
   const recorderAriaLabel = capturing
     ? `Listening for ${title} shortcut`
-    : `Change ${title} shortcut. Current shortcut: ${shortcut.displayName}`;
+    : `Change ${title} shortcut. Current shortcut: ${displayName}`;
   const inlineHelp = capturing
     ? `<p class="shortcut-row-help" role="status" aria-live="polite" aria-atomic="true">${escapeHtml(help)}</p>`
     : "";
@@ -1439,6 +1493,52 @@ function shortcutCaptureStartMessage(target: ShortcutSettingKey) {
   return `${shortcutTargetLabel(target)} is listening. Press the shortcut once. It saves automatically. Press Escape to cancel.`;
 }
 
+function shortcutDisplayName(shortcut: ShortcutSettings) {
+  const chord = shortcut.chord;
+  if (!chord) return shortcut.displayName;
+
+  const parts = [
+    ...chord.modifiers.map(shortcutModifierLabel),
+    ...(chord.key ? [shortcutKeyLabel(chord.key)] : []),
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(" + ") : shortcut.displayName;
+}
+
+function shortcutModifierLabel(modifier: string) {
+  const labels: Record<string, string> = {
+    command: "Command",
+    control: "Control",
+    option: "Option",
+    alt: "Alt",
+    shift: "Shift",
+    fn: "Fn",
+    meta: "Meta",
+  };
+  return labels[modifier] ?? modifier;
+}
+
+function shortcutKeyLabel(key: ShortcutKey) {
+  if (typeof key === "string") {
+    const labels: Record<string, string> = {
+      space: "Space",
+      return: "Return",
+      tab: "Tab",
+      escape: "Escape",
+      arrowLeft: "Left Arrow",
+      arrowRight: "Right Arrow",
+      arrowUp: "Up Arrow",
+      arrowDown: "Down Arrow",
+      delete: "Delete",
+    };
+    return labels[key] ?? key;
+  }
+
+  if ("character" in key) return key.character.toUpperCase();
+  if ("function" in key) return `F${key.function}`;
+  return "";
+}
+
 function shortcutKeycaps(displayName: string) {
   return displayName
     .split(" + ")
@@ -1452,7 +1552,7 @@ function renderCleanup(
   models: ModelStatus[],
   defaultCleanupPrompt: string,
 ) {
-  const cleanupModelId = selectedCleanupModelId(settings);
+  const cleanupModelId = settings.cleanupModelId;
   const cleanup =
     models.find((m) => m.role === "cleanup" && m.required) ??
     models.find((m) => m.id === cleanupModelId);
@@ -1755,13 +1855,15 @@ function renderGeneral(
         <p>Parrot needs these no matter which language or local model you use.</p>
       </div>
       <div class="permission-list embedded">
-        ${renderPermissionRow("microphone", "Microphone", "Record your voice locally for dictation.", permissions.microphone, { hideRefreshWhenGranted: true, openSettingsWhenGranted: true })}
-        ${renderPermissionRow("accessibility", "Accessibility", "Consume the Parrot shortcut event and paste the finished text.", permissions.accessibility, { hideRefreshWhenGranted: true, openSettingsWhenGranted: true })}
-        ${
-          shouldShowInputMonitoringPermission(settings)
-            ? renderPermissionRow("inputMonitoring", "Input Monitoring", "Some Macs require this so Parrot Core can listen for your shortcut while you use other apps.", permissions.inputMonitoring, { hideRefreshWhenGranted: true, openSettingsWhenGranted: true })
-            : ""
-        }
+        ${permissionRequirementsForDisplay(permissions, settings)
+          .filter((requirement) => requirement.kind !== "inputMonitoring" || shouldShowInputMonitoringPermission(settings) || requirement.required)
+          .map((requirement) =>
+            renderPermissionRequirement(requirement, {
+              hideRefreshWhenGranted: true,
+              openSettingsWhenGranted: true,
+            }),
+          )
+          .join("")}
       </div>
     </section>
 
@@ -1897,10 +1999,7 @@ function bindPermissionButtons() {
         toast = "";
 
         try {
-          const permissions = await invoke<PermissionSnapshot>(
-            "request_permission",
-            { kind, openSettings },
-          );
+          const permissions = await requestPermission(kind, openSettings);
           acceptPermissionSnapshot(permissions);
         } catch (error) {
           toast = `Could not request permission: ${errorMessage(error)}`;
@@ -1932,7 +2031,7 @@ function bindModelButtons() {
         }
         toast = "";
         try {
-          snapshot = await invoke<Snapshot>("download_model", { kind });
+          snapshot = await downloadModel(kind);
           render();
           pollModelsUntilStable();
         } catch (error) {
@@ -1953,7 +2052,7 @@ function bindModelButtons() {
         render();
 
         try {
-          snapshot = await invoke<Snapshot>("delete_model", { kind });
+          snapshot = await deleteModel(kind);
           if (
             snapshot.models.every((model) => !model.downloading) &&
             modelPollHandle !== null
@@ -2041,12 +2140,10 @@ async function saveLanguageChoice(
 ) {
   if (!snapshot) return;
   toast = "";
-  const next = await invoke<Snapshot>("save_settings", {
-    settings: {
-      ...snapshot.settings,
-      dictationLanguageMode: mode,
-      dictationLanguageCode: code,
-    },
+  const next = await saveSettingsApi({
+    ...snapshot.settings,
+    dictationLanguageMode: mode,
+    dictationLanguageCode: code,
   });
   snapshot = next;
 
@@ -2089,9 +2186,7 @@ function bindSetupEvents() {
       if (!snapshot) return;
 
       try {
-        const permissions = await invoke<PermissionSnapshot>(
-          "permission_statuses",
-        );
+        const permissions = await permissionStatuses();
         acceptPermissionSnapshot(permissions);
 
         if (!snapshot || !setupRequirementsComplete(snapshot)) {
@@ -2107,10 +2202,11 @@ function bindSetupEvents() {
         toast = "Preparing local models for first use…";
         render();
 
-        await invoke("warm_models");
-        await invoke("set_hotkey_monitor_enabled", { enabled: true });
-        snapshot = await invoke<Snapshot>("save_settings", {
-          settings: { ...snapshot.settings, onboardingCompleted: true },
+        await warmModels();
+        await setHotkeyMonitorEnabled(true);
+        snapshot = await saveSettingsApi({
+          ...snapshot.settings,
+          onboardingCompleted: true,
         });
 
         setupFinalizing = false;
@@ -2132,7 +2228,7 @@ async function refreshPermissionStatus(options: { silent?: boolean } = {}) {
   if (!options.silent) toast = "";
 
   try {
-    const permissions = await invoke<PermissionSnapshot>("permission_statuses");
+    const permissions = await permissionStatuses();
     acceptPermissionSnapshot(permissions);
   } catch (error) {
     if (!options.silent) {
@@ -2289,9 +2385,7 @@ function bindEvents() {
     launchAtLogin.onchange = async () => {
       toast = "";
       try {
-        snapshot = await invoke<Snapshot>("set_launch_at_login", {
-          enabled: launchAtLogin.checked,
-        });
+        snapshot = await setLaunchAtLogin(launchAtLogin.checked);
         render();
       } catch (error) {
         toast = `Could not update launch at login: ${errorMessage(error)}`;
@@ -2307,7 +2401,7 @@ function bindEvents() {
         testRecording = true;
         testResult = "Recording… speak now, then click Stop test.";
         try {
-          await invoke("start_test_dictation");
+          await startTestDictation();
         } catch (error) {
           testRecording = false;
           testResult = `Could not start recording: ${errorMessage(error)}`;
@@ -2318,9 +2412,7 @@ function bindEvents() {
         testResult = "Transcribing…";
         render();
         try {
-          const result = await invoke<{ raw: string; cleaned: string }>(
-            "stop_test_dictation",
-          );
+          const result = await stopTestDictation();
           testResult = result.cleaned || result.raw;
           await load();
         } catch (error) {
@@ -2367,7 +2459,7 @@ function bindEvents() {
       }
 
       try {
-        snapshot = await invoke<Snapshot>("clear_history");
+        snapshot = await clearHistory();
         toast = "";
       } catch (error) {
         toast = `Could not clear history: ${errorMessage(error)}`;
@@ -2399,9 +2491,7 @@ function bindEvents() {
     .forEach((button) => {
       button.onclick = async () => {
         try {
-          snapshot = await invoke<Snapshot>("delete_history_item", {
-            id: button.dataset.id,
-          });
+          snapshot = await deleteHistoryItem(button.dataset.id || "");
         } catch (error) {
           toast = `Could not delete history item: ${errorMessage(error)}`;
         }
@@ -2454,7 +2544,9 @@ function bindEvents() {
   if (resetShortcuts)
     resetShortcuts.onclick = async () => {
       const shouldRestart =
-        shortcutMonitorPausedForCapture && snapshot?.permissions.allGranted;
+        shortcutMonitorPausedForCapture &&
+        snapshot !== null &&
+        permissionsAllGranted(snapshot.permissions);
       shortcutCaptureSession += 1;
       shortcutCaptureTarget = null;
       shortcutMonitorPausedForCapture = false;
@@ -2466,16 +2558,24 @@ function bindEvents() {
       await saveSettings({
         pushToTalkShortcut: {
           ...DEFAULT_PUSH_TO_TALK_SHORTCUT,
-          macosKeyCodes: [...DEFAULT_PUSH_TO_TALK_SHORTCUT.macosKeyCodes],
+          platformCodes: {
+            ...DEFAULT_PUSH_TO_TALK_SHORTCUT.platformCodes,
+            macosKeyCodes: [
+              ...shortcutMacosKeyCodes(DEFAULT_PUSH_TO_TALK_SHORTCUT),
+            ],
+          },
         },
         handsFreeShortcut: {
           ...DEFAULT_HANDS_FREE_SHORTCUT,
-          macosKeyCodes: [...DEFAULT_HANDS_FREE_SHORTCUT.macosKeyCodes],
+          platformCodes: {
+            ...DEFAULT_HANDS_FREE_SHORTCUT.platformCodes,
+            macosKeyCodes: [...shortcutMacosKeyCodes(DEFAULT_HANDS_FREE_SHORTCUT)],
+          },
         },
       });
       if (shouldRestart) {
         try {
-          await invoke("set_hotkey_monitor_enabled", { enabled: true });
+          await setHotkeyMonitorEnabled(true);
         } catch (error) {
           const message = errorMessage(error);
           await maybeRequireInputMonitoring(message);
@@ -2566,7 +2666,7 @@ async function beginShortcutCapture(target: ShortcutSettingKey) {
 
   const session = ++shortcutCaptureSession;
   shortcutCaptureTarget = target;
-  shortcutMonitorPausedForCapture = snapshot.permissions.allGranted;
+  shortcutMonitorPausedForCapture = permissionsAllGranted(snapshot.permissions);
   shortcutNotice = {
     level: "info",
     message: shortcutCaptureStartMessage(target),
@@ -2575,9 +2675,7 @@ async function beginShortcutCapture(target: ShortcutSettingKey) {
   render();
 
   try {
-    const shortcut = await invoke<ShortcutSettings>("capture_shortcut", {
-      target,
-    });
+    const shortcut = await captureShortcut(target);
 
     if (session !== shortcutCaptureSession || !snapshot) return;
 
@@ -2597,7 +2695,8 @@ async function beginShortcutCapture(target: ShortcutSettingKey) {
       [target]: {
         ...snapshot.settings[target],
         displayName: shortcut.displayName,
-        macosKeyCodes: shortcut.macosKeyCodes,
+        chord: shortcut.chord,
+        platformCodes: shortcut.platformCodes,
         mode: shortcut.mode,
       },
     } as Partial<AppSettings>);
@@ -2624,7 +2723,7 @@ async function finishShortcutCapture(
   shortcutCaptureTarget = null;
   shortcutMonitorPausedForCapture = false;
 
-  if (!snapshot?.permissions.allGranted) {
+  if (!snapshot || !permissionsAllGranted(snapshot.permissions)) {
     shortcutNotice = {
       level,
       message: `${message} Finish setup to enable the shortcut.`,
@@ -2635,7 +2734,7 @@ async function finishShortcutCapture(
 
   if (shouldRestart) {
     try {
-      await invoke("set_hotkey_monitor_enabled", { enabled: true });
+      await setHotkeyMonitorEnabled(true);
     } catch (error) {
       const restartMessage = errorMessage(error);
       await maybeRequireInputMonitoring(restartMessage);
@@ -2661,9 +2760,13 @@ function shortcutsEquivalent(a: ShortcutSettings, b: ShortcutSettings) {
 }
 
 function shortcutCodeKey(shortcut: ShortcutSettings) {
-  return [...new Set(shortcut.macosKeyCodes)]
+  return [...new Set(shortcutMacosKeyCodes(shortcut))]
     .sort((left, right) => left - right)
     .join(",");
+}
+
+function shortcutMacosKeyCodes(shortcut: ShortcutSettings) {
+  return shortcut.platformCodes?.macosKeyCodes ?? shortcut.macosKeyCodes ?? [];
 }
 
 function dictionaryEntryFromInput(term: string): DictionaryEntry | null {
@@ -2726,7 +2829,7 @@ function pollModelsUntilStable() {
   if (modelPollHandle !== null) window.clearInterval(modelPollHandle);
   modelPollHandle = window.setInterval(async () => {
     try {
-      snapshot = await invoke<Snapshot>("get_app_snapshot");
+      snapshot = await getAppSnapshot();
       render();
       const stillDownloading = snapshot.models.some(
         (model) => model.downloading,

@@ -1,0 +1,93 @@
+[
+  {
+    "name": "add space after word",
+    "input": "world",
+    "precedingContext": "Hello",
+    "expected": " world"
+  },
+  {
+    "name": "add space after sentence punctuation",
+    "input": "World.",
+    "precedingContext": "Hello.",
+    "expected": " World."
+  },
+  {
+    "name": "add space after closed quote",
+    "input": "yes",
+    "precedingContext": "He said “hello.”",
+    "expected": " Yes"
+  },
+  {
+    "name": "no space after ambiguous quote",
+    "input": "hello",
+    "precedingContext": "\"",
+    "expected": "hello"
+  },
+  {
+    "name": "no space when context ends in whitespace",
+    "input": "world",
+    "precedingContext": "Hello, ",
+    "expected": "world"
+  },
+  {
+    "name": "no space at start of new line",
+    "input": "I like coding.",
+    "precedingContext": "Hello my name is John.\n",
+    "expected": "I like coding."
+  },
+  {
+    "name": "current line spacing only",
+    "input": "coding.",
+    "precedingContext": "Hello my name is John.\nI like",
+    "expected": " coding."
+  },
+  {
+    "name": "capitalize after sentence terminator",
+    "input": "hello again.",
+    "precedingContext": "Done. ",
+    "expected": "Hello again."
+  },
+  {
+    "name": "capitalize when adding space",
+    "input": "hello again.",
+    "precedingContext": "Done.",
+    "expected": " Hello again."
+  },
+  {
+    "name": "do not capitalize camelCase brand",
+    "input": "iPhone setup is done.",
+    "precedingContext": "Done. ",
+    "expected": "iPhone setup is done."
+  },
+  {
+    "name": "preserve intentional leading newline",
+    "input": "\n- Milk\n- Eggs",
+    "precedingContext": "Shopping list:",
+    "expected": "\n- Milk\n- Eggs"
+  },
+  {
+    "name": "punctuation-only dictation remains attached",
+    "input": ",",
+    "precedingContext": "Hello",
+    "expected": ","
+  },
+  {
+    "name": "opening parenthesis remains attached",
+    "input": "hello",
+    "precedingContext": "(",
+    "expected": "hello"
+  },
+  {
+    "name": "nil context leaves text unchanged",
+    "input": "hello",
+    "precedingContext": null,
+    "expected": "hello"
+  },
+  {
+    "name": "empty context leaves text unchanged",
+    "input": "hello",
+    "precedingContext": "",
+    "expected": "hello"
+  }
+]
+

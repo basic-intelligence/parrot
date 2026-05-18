@@ -1,19 +1,9 @@
 use anyhow::Context;
-use chrono::{DateTime, Utc};
+pub use parrot_protocol::HistoryEntry;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryEntry {
-    pub id: Uuid,
-    pub created_at: DateTime<Utc>,
-    pub audio_duration_seconds: f64,
-    pub raw_transcription: Option<String>,
-    pub cleaned_transcription: Option<String>,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct HistoryIndex {

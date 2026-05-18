@@ -1,0 +1,12 @@
+<|turn>system
+{{ system_prompt }}
+
+Model-specific output rule:
+- Do not use thinking mode.
+- Do not output thought channels, reasoning, labels, or explanations.
+<turn|>
+<|turn>user
+{{ user_prompt }}
+<turn|>
+<|turn>model
+

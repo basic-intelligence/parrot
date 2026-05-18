@@ -2,6 +2,18 @@ import XCTest
 @testable import ParrotCore
 
 final class ContextualPasteFormatterTests: XCTestCase {
+    func testSharedFixtures() throws {
+        let fixtures = try SharedResources.decode([ContextualPasteFixture].self, relativePath: "test-fixtures/contextual-paste.json")
+
+        for fixture in fixtures {
+            XCTAssertEqual(
+                ContextualPasteFormatter.format(fixture.input, precedingContext: fixture.precedingContext),
+                fixture.expected,
+                fixture.name
+            )
+        }
+    }
+
     func testAddsSpaceAfterSentencePunctuationBeforeWord() {
         XCTAssertEqual(
             ContextualPasteFormatter.format("World.", precedingContext: "Hello."),
@@ -123,4 +135,11 @@ final class ContextualPasteFormatterTests: XCTestCase {
             "hello"
         )
     }
+}
+
+private struct ContextualPasteFixture: Decodable {
+    let name: String
+    let input: String
+    let precedingContext: String?
+    let expected: String
 }

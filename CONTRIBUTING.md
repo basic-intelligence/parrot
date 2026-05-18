@@ -91,10 +91,15 @@ npm run build
 - `src/` — TypeScript frontend.
 - `src-tauri/src/` — Rust/Tauri host.
 - `native-core/macos/` — Swift macOS sidecar.
-- `native-core/shared/` — Shared prompts and language catalog.
+- `native-core/shared/` — Shared product resources and test fixtures.
+- `crates/` — Shared Rust product logic and DTOs.
 - `public/` — Static frontend assets.
 - `src-tauri/icons/` — App and tray icons.
 - `src-tauri/capabilities/` — Tauri permissions.
+
+## Cross-platform foundation
+
+Do not duplicate prompts, model catalog entries, settings defaults, cleanup sanitizer behavior, language routing, or paste formatting in platform-specific code. Put product behavior in shared crates/resources and keep OS behavior in platform adapters.
 
 ## Pull request guidelines
 

@@ -2,6 +2,18 @@ import XCTest
 @testable import ParrotCore
 
 final class CleanupOutputSanitizerTests: XCTestCase {
+    func testSharedFixtures() throws {
+        let fixtures = try SharedResources.decode([CleanupSanitizerFixture].self, relativePath: "test-fixtures/cleanup-sanitizer.json")
+
+        for fixture in fixtures {
+            XCTAssertEqual(
+                CleanupOutputSanitizer.sanitize(fixture.input),
+                fixture.expected,
+                fixture.name
+            )
+        }
+    }
+
     func testRemovesOrphanThinkClosers() {
         XCTAssertEqual(
             CleanupOutputSanitizer.sanitize("</think>\n\n</think>\n\nHola, me llamo John."),
@@ -78,4 +90,10 @@ final class CleanupOutputSanitizerTests: XCTestCase {
             "Today I had a good day."
         )
     }
+}
+
+private struct CleanupSanitizerFixture: Decodable {
+    let name: String
+    let input: String
+    let expected: String
 }

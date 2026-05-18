@@ -1,9 +1,24 @@
 # Native Core
 
-`native-core/shared` contains shared cleanup prompts and the shared dictation language catalog. The Tauri host passes shared behavior, including cleanup prompts, language catalog data, and current settings, to whichever native sidecar is running.
+Parrot is currently macOS-only, but native-core code is split so future Windows and Linux sidecars can reuse product behavior instead of copying macOS logic.
 
-`native-core/macos` is the only implemented native sidecar today. It is macOS-specific Swift code that owns audio capture, global hotkey monitoring, local Whisper transcription, local llama.cpp/Qwen cleanup, permissions, and paste integration.
+Shared product logic:
+  protocol, settings, model catalog, language routing, prompts,
+  cleanup sanitizer, contextual paste formatting, speech trimming,
+  model status/download bookkeeping, tests, shared assets
 
-`native-core/windows` and `native-core/linux` are placeholders for future sidecars; they are not supported targets today.
+Platform adapters:
+  audio capture, input devices, permissions, global shortcuts,
+  focused text context, paste injection, sound playback, sidecar launch
+
+## Layout
+
+- `shared/` contains product resources and test fixtures: languages, models, prompts, sound manifests, and behavior fixtures.
+- `macos/` contains the implemented Swift sidecar and macOS platform adapters.
+- `windows/` is a future sidecar placeholder.
+- `linux/` is a future sidecar placeholder.
+- `../crates/` contains shared Rust product logic used by the Tauri host and fixture tests.
 
 Future sidecars should keep the same newline-delimited JSON request/response boundary used by the macOS sidecar.
+
+Tauri resource bundling should include shared JSON and prompt resources. Tauri sidecar `externalBin` target-triple naming is reserved for future Windows/Linux sidecars; do not add non-working platform packaging requirements in this foundation refactor.

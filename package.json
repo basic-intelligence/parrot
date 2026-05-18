@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "tauri dev",
     "dev:ui": "vite --host 127.0.0.1 --port 1420",
+    "before:dev": "node scripts/before-tauri-dev.mjs",
+    "before:build": "node scripts/before-tauri-build.mjs",
     "build": "tauri build",
     "build:dmg": "tauri build --bundles dmg",
     "build:ui": "vite build",

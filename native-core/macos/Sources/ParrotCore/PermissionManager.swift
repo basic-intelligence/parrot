@@ -17,7 +17,41 @@ enum PermissionManager {
         let microphone = microphoneStatus()
         let accessibility = accessibilityStatus()
         let inputMonitoring = inputMonitoringStatus()
+        let requirements = [
+            PermissionRequirementDTO(
+                kind: .microphone,
+                title: "Microphone",
+                description: "Record your voice locally for dictation.",
+                state: microphone,
+                required: true,
+                requestable: true,
+                opensSettings: true
+            ),
+            PermissionRequirementDTO(
+                kind: .accessibility,
+                title: "Accessibility",
+                description: "Consume the Parrot shortcut event and paste the finished text.",
+                state: accessibility,
+                required: true,
+                requestable: true,
+                opensSettings: true
+            ),
+            PermissionRequirementDTO(
+                kind: .inputMonitoring,
+                title: "Input Monitoring",
+                description: "Some Macs require this so Parrot Core can listen for your shortcut while you use other apps.",
+                state: inputMonitoring,
+                required: false,
+                requestable: true,
+                opensSettings: true
+            ),
+        ]
+        let allRequiredGranted = requirements
+            .filter(\.required)
+            .allSatisfy { $0.state == .granted }
         return PermissionSnapshotDTO(
+            requirements: requirements,
+            allRequiredGranted: allRequiredGranted,
             microphone: microphone,
             accessibility: accessibility,
             inputMonitoring: inputMonitoring,

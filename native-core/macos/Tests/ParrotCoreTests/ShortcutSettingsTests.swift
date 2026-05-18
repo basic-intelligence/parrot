@@ -30,6 +30,37 @@ final class ShortcutSettingsTests: XCTestCase {
 
         XCTAssertEqual(value?["enabled"]?.boolValue, false)
         XCTAssertEqual(value?["doubleTapToggle"]?.boolValue, true)
+        XCTAssertNil(value?["macosKeyCodes"])
+        if case .array(let keyCodes) = value?["platformCodes"]?["macosKeyCodes"] {
+            XCTAssertEqual(keyCodes.compactMap(\.numberValue), [63])
+        } else {
+            XCTFail("Expected platform macOS key codes.")
+        }
+    }
+
+    func testPlatformNeutralShortcutShapeDecodes() throws {
+        let data = """
+        {
+          "displayName": "Control + Space",
+          "mode": "toggle",
+          "enabled": true,
+          "doubleTapToggle": false,
+          "chord": {
+            "modifiers": ["control"],
+            "key": "space"
+          },
+          "platformCodes": {
+            "macosKeyCodes": [59, 49],
+            "windowsVirtualKeys": null,
+            "linuxKeyCodes": null
+          }
+        }
+        """.data(using: .utf8)!
+
+        let shortcut = try JSONDecoder.parrot.decode(ShortcutSettings.self, from: data)
+
+        XCTAssertEqual(shortcut.macosKeyCodes, [59, 49])
+        XCTAssertEqual(shortcut.chord?.modifiers, ["control"])
     }
 
     func testAppSettingsMissingPasteTargetPreferenceDefaultsToFalse() throws {

@@ -6,6 +6,7 @@ mod tray;
 
 use commands::*;
 use core_bridge::CoreBridge;
+use parrot_protocol::NativeCoreMethod;
 use settings::SettingsStore;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
@@ -38,10 +39,14 @@ fn sync_launch_at_login(app: &AppHandle, settings: &mut SettingsStore) -> anyhow
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_opener::init());
+
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+
+    builder
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if !args.iter().any(|arg| arg == "--background") {
                 show_main_window(app);
@@ -78,6 +83,7 @@ pub fn run() {
 
             let initial_settings = settings.settings.clone();
             if let Err(error) = tauri::async_runtime::block_on(initialize_core(
+                &app_handle,
                 &core,
                 initial_settings,
             )) {
@@ -89,7 +95,7 @@ pub fn run() {
             let app_for_boot = app_handle.clone();
             tauri::async_runtime::spawn(async move {
                 let permissions = core_for_boot
-                    .request("permissionStatuses", serde_json::json!({}))
+                    .request(NativeCoreMethod::PermissionStatuses, serde_json::json!({}))
                     .await
                     .ok();
 
@@ -100,7 +106,7 @@ pub fn run() {
 
                 if all_ready {
                     let result = core_for_boot
-                        .request("startHotkeyMonitor", serde_json::json!({}))
+                        .request(NativeCoreMethod::StartHotkeyMonitor, serde_json::json!({}))
                         .await;
 
                     match result {

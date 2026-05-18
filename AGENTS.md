@@ -31,3 +31,7 @@ Use concise Conventional Commit-style messages seen in history, such as `docs: u
 ## Security, Configuration & Agent Notes
 
 Parrot is local-first. Do not add telemetry, analytics, cloud processing, or network requests without explicit documentation and privacy review. Never read `.env` or `.env.local`; ask for specific values if needed. Use the `code` command for opening files, not `open`. On macOS, assume Apple Silicon unless stated otherwise.
+
+## Cross-Platform Readiness
+
+When adding native-core logic, keep product behavior in shared crates/files and OS behavior in platform adapters. Do not duplicate prompts, model catalogs, settings defaults, language routing, cleanup sanitization, or paste formatting across macOS, Windows, and Linux.

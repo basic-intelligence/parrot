@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.3",
+      "entitlements": "./ParrotCore.entitlements",
+      "files": {
+        "Helpers/Parrot.app": "./binaries/Parrot.app"
+      },
+      "dmg": {
+        "background": "assets/dmg-background.png",
+        "windowSize": {
+          "width": 760,
+          "height": 560
+        },
+        "appPosition": {
+          "x": 166,
+          "y": 292
+        },
+        "applicationFolderPosition": {
+          "x": 594,
+          "y": 292
+        }
+      }
+    }
+  }
+}

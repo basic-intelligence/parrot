@@ -69,6 +69,9 @@ actor CoreService {
     func handle(_ request: JSONRequest) async throws -> JSONValue {
         switch request.method {
         case "initialize":
+            if let pathsValue = request.payload["paths"] {
+                CorePaths.configure(try decode(NativeCorePathsDTO.self, from: pathsValue))
+            }
             if let languageCatalogValue = request.payload["languageCatalog"] {
                 let languageCatalog = try decode([LanguageCatalogEntry].self, from: languageCatalogValue)
                 LanguageCatalog.configure(languageCatalog)
@@ -81,7 +84,9 @@ actor CoreService {
                     handsFree: settings.handsFreeShortcut
                 )
             }
-            let cleanupPrompt = request.payload["prompts"]?["cleanupTranscript"]?.stringValue ?? ""
+            let cleanupPrompt = request.payload["prompts"]?["cleanupDefaultInstructions"]?.stringValue
+                ?? request.payload["prompts"]?["cleanupTranscript"]?.stringValue
+                ?? SharedResources.text(relativePath: "prompts/cleanup-default-instructions.md")
             let debugCleanupFailures = request.payload["debugCleanupFailures"]?.boolValue ?? false
             await pipeline.configure(
                 cleanupPrompt: cleanupPrompt,
@@ -146,6 +151,7 @@ actor CoreService {
                 }
                 recorder.preferredInputUID = settings.selectedInputUid
                 try recorder.start()
+                SoundFeedback.play(.recordingStart, enabled: settings.playSounds)
 
                 let warmSettings = settings
                 speechWarmTask?.cancel()
@@ -243,6 +249,7 @@ actor CoreService {
         do {
             recorder.preferredInputUID = settings.selectedInputUid
             try recorder.start()
+            SoundFeedback.play(.recordingStart, enabled: settings.playSounds)
 
             let warmSettings = settings
             speechWarmTask?.cancel()
@@ -384,22 +391,67 @@ actor CoreService {
     }
 }
 
+protocol SoundFeedbackPlaying {
+    func play(_ event: SoundEvent, enabled: Bool)
+}
+
+enum SoundEvent: String {
+    case recordingStart
+    case recordingSuccess
+    case recordingCancel
+    case recordingError
+}
+
 private enum SoundFeedback {
+    static func play(_ event: SoundEvent, enabled: Bool) {
+        guard enabled else { return }
+        let manifest = SoundManifest.load()
+        if let soundURL = manifest.soundURL(for: event),
+           FileManager.default.fileExists(atPath: soundURL.path),
+           NSSound(contentsOf: soundURL, byReference: true)?.play() == true {
+            return
+        }
+    }
+
     static func playSuccess(enabled: Bool) {
-        playSystemSound(named: "Pop", enabled: enabled)
+        play(.recordingSuccess, enabled: enabled)
     }
 
     static func playFailure(enabled: Bool) {
-        playSystemSound(named: "Basso", enabled: enabled)
+        play(.recordingError, enabled: enabled)
     }
 
     static func playCancel(enabled: Bool) {
-        playSystemSound(named: "Submarine", enabled: enabled)
+        play(.recordingCancel, enabled: enabled)
     }
 
-    private static func playSystemSound(named name: String, enabled: Bool) {
-        guard enabled else { return }
-        _ = NSSound(named: NSSound.Name(name))?.play()
+}
+
+private struct SoundManifest: Decodable {
+    let recordingStart: String
+    let recordingSuccess: String
+    let recordingCancel: String
+    let recordingError: String
+
+    static func load() -> SoundManifest {
+        (try? SharedResources.decode(SoundManifest.self, relativePath: "sounds.json"))
+            ?? SoundManifest(
+                recordingStart: "sounds/recording-start.wav",
+                recordingSuccess: "sounds/recording-success.wav",
+                recordingCancel: "sounds/recording-cancel.wav",
+                recordingError: "sounds/recording-error.wav"
+            )
+    }
+
+    func soundURL(for event: SoundEvent) -> URL? {
+        let relativePath: String
+        switch event {
+        case .recordingStart: relativePath = recordingStart
+        case .recordingSuccess: relativePath = recordingSuccess
+        case .recordingCancel: relativePath = recordingCancel
+        case .recordingError: relativePath = recordingError
+        }
+        return SharedResources.url(for: relativePath)
     }
 }
 

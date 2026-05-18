@@ -41,7 +41,7 @@ final class LanguageModelRoutingTests: XCTestCase {
         XCTAssertEqual(DictationRouting.decodeLanguageCode(for: settings), "en")
 
         let metadata = DictationRouting.selectedLanguageMetadata(for: settings)
-        XCTAssertEqual(metadata.xmlElement, "<dictation_language mode=\"selected\" code=\"en\" locale=\"en-GB\" />")
+        XCTAssertEqual(metadata.xmlElement, "<dictation_language mode=\"selected\" code=\"en\" locale=\"en-GB\" name=\"English (UK)\" />")
     }
 
     func testSpecificLocaleRoutesToMultilingualModelsAndBaseDecodeLanguage() {
@@ -52,7 +52,7 @@ final class LanguageModelRoutingTests: XCTestCase {
         XCTAssertEqual(DictationRouting.decodeLanguageCode(for: settings), "pt")
 
         let metadata = DictationRouting.selectedLanguageMetadata(for: settings)
-        XCTAssertEqual(metadata.xmlElement, "<dictation_language mode=\"selected\" code=\"pt\" locale=\"pt-BR\" />")
+        XCTAssertEqual(metadata.xmlElement, "<dictation_language mode=\"selected\" code=\"pt\" locale=\"pt-BR\" name=\"Portuguese (Brazil)\" />")
     }
 
     func testSpecificLocaleCanonicalizesInputCasing() {
@@ -61,7 +61,7 @@ final class LanguageModelRoutingTests: XCTestCase {
         XCTAssertEqual(DictationRouting.decodeLanguageCode(for: settings), "pt")
 
         let metadata = DictationRouting.selectedLanguageMetadata(for: settings)
-        XCTAssertEqual(metadata.xmlElement, "<dictation_language mode=\"selected\" code=\"pt\" locale=\"pt-BR\" />")
+        XCTAssertEqual(metadata.xmlElement, "<dictation_language mode=\"selected\" code=\"pt\" locale=\"pt-BR\" name=\"Portuguese (Brazil)\" />")
     }
 
     func testDetectLanguageRoutesToMultilingualModelsAndDetection() {
@@ -110,7 +110,7 @@ final class LanguageModelRoutingTests: XCTestCase {
         let selected = DictationRouting.selectedLanguageMetadata(
             for: makeSettings(mode: .specific, code: "ja")
         )
-        XCTAssertEqual(selected.xmlElement, "<dictation_language mode=\"selected\" code=\"ja\" />")
+        XCTAssertEqual(selected.xmlElement, "<dictation_language mode=\"selected\" code=\"ja\" name=\"Japanese\" />")
 
         let detected = DictationRouting.detectedLanguageMetadata(code: "fr")
         XCTAssertEqual(detected.xmlElement, "<dictation_language mode=\"detected\" code=\"fr\" />")
@@ -163,6 +163,45 @@ final class LanguageModelRoutingTests: XCTestCase {
         XCTAssertEqual(specific.fileName, "ggml-small-q5_1.bin")
     }
 
+    func testSharedLanguageRoutingFixtures() throws {
+        let fixtures = try SharedResources.decode([LanguageRoutingFixture].self, relativePath: "test-fixtures/language-routing.json")
+
+        for fixture in fixtures {
+            let settings = makeSettings(
+                mode: fixture.settings.dictationLanguageMode,
+                code: fixture.settings.dictationLanguageCode
+            )
+            var selectedSettings = settings
+            selectedSettings.cleanupModelId = fixture.settings.cleanupModelId
+
+            XCTAssertEqual(
+                DictationRouting.usesEnglishRoute(for: selectedSettings),
+                fixture.usesEnglishRoute,
+                fixture.name
+            )
+            XCTAssertEqual(
+                DictationRouting.speechModelKind(for: selectedSettings).rawValue,
+                fixture.speechModelSlot,
+                fixture.name
+            )
+            XCTAssertEqual(
+                DictationRouting.decodeLanguageCode(for: selectedSettings),
+                fixture.decodeLanguageCode,
+                fixture.name
+            )
+            XCTAssertEqual(
+                DictationRouting.selectedLanguageMetadata(for: selectedSettings).xmlElement,
+                fixture.selectedLanguageXml,
+                fixture.name
+            )
+            XCTAssertEqual(
+                DictationRouting.cleanupModelKind(for: selectedSettings).rawValue,
+                fixture.cleanupModelId,
+                fixture.name
+            )
+        }
+    }
+
     private func intelSpeechDescriptor(for settings: AppSettings) -> SpeechModelDescriptor {
         ModelCatalog.speechModel(
             for: DictationRouting.speechModelKind(for: settings),
@@ -199,4 +238,20 @@ final class LanguageModelRoutingTests: XCTestCase {
             inputMonitoringPermissionShownInOnboarding: false
         )
     }
+}
+
+private struct LanguageRoutingFixture: Decodable {
+    struct Settings: Decodable {
+        let dictationLanguageMode: DictationLanguageMode
+        let dictationLanguageCode: String?
+        let cleanupModelId: String
+    }
+
+    let name: String
+    let settings: Settings
+    let usesEnglishRoute: Bool
+    let speechModelSlot: String
+    let decodeLanguageCode: String?
+    let selectedLanguageXml: String
+    let cleanupModelId: String
 }

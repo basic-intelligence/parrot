@@ -1,0 +1,63 @@
+[[command]]
+name = "get_app_snapshot"
+window = "main"
+
+[[command]]
+name = "save_settings"
+window = "main"
+
+[[command]]
+name = "set_launch_at_login"
+window = "main"
+
+[[command]]
+name = "set_update_badge"
+window = "main"
+
+[[command]]
+name = "download_model"
+window = "main"
+
+[[command]]
+name = "delete_model"
+window = "main"
+
+[[command]]
+name = "warm_models"
+window = "main"
+
+[[command]]
+name = "start_test_dictation"
+window = "main"
+
+[[command]]
+name = "stop_test_dictation"
+window = "main"
+
+[[command]]
+name = "set_hotkey_monitor_enabled"
+window = "main"
+
+[[command]]
+name = "capture_shortcut"
+window = "main"
+
+[[command]]
+name = "permission_statuses"
+window = "main"
+
+[[command]]
+name = "request_permission"
+window = "main"
+
+[[command]]
+name = "save_recording_result"
+window = "main"
+
+[[command]]
+name = "delete_history_item"
+window = "main"
+
+[[command]]
+name = "clear_history"
+window = "main"
