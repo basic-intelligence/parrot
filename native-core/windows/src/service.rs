@@ -4,7 +4,7 @@ use crate::platform::audio::{selected_uid_exists, RecordedAudio};
 use crate::platform::paste;
 use crate::{
     json_lines::{error_response, event_message, success_response, RequestLine},
-    models::downloads::WindowsModelStore,
+    models::downloads::{windows_descriptor_for, WindowsModelStore},
     models::llama_cpp::LlamaCleanupPipeline,
     models::whisper_cpp::WhisperCppPipeline,
     platform::audio::AudioManager,
@@ -170,7 +170,14 @@ impl CoreService {
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow::anyhow!("downloadModel payload is missing `kind`"))?;
         let settings = self.settings.clone().unwrap_or_default();
-        serde_json::to_value(self.models.start_download(kind, &settings)?).map_err(Into::into)
+        let on_success = if is_cleanup_model(kind) {
+            let cleanup = self.cleanup.clone();
+            Some(Box::new(move || cleanup.clear_cache()) as Box<dyn FnOnce() + Send>)
+        } else {
+            None
+        };
+        serde_json::to_value(self.models.start_download(kind, &settings, on_success)?)
+            .map_err(Into::into)
     }
 
     fn delete_model(&self, payload: Value) -> anyhow::Result<Value> {
@@ -179,7 +186,11 @@ impl CoreService {
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow::anyhow!("deleteModel payload is missing `kind`"))?;
         let settings = self.settings.clone().unwrap_or_default();
-        serde_json::to_value(self.models.delete_model(kind, &settings)?).map_err(Into::into)
+        let statuses = self.models.delete_model(kind, &settings)?;
+        if is_cleanup_model(kind) {
+            self.cleanup.clear_cache();
+        }
+        serde_json::to_value(statuses).map_err(Into::into)
     }
 
     fn permission_statuses(&self) -> anyhow::Result<Value> {
@@ -873,6 +884,12 @@ fn windows_settings_or_default(settings: Option<AppSettings>) -> AppSettings {
     let mut settings = settings.unwrap_or_default();
     normalize_settings_for_platform(&mut settings, SettingsPlatform::Windows);
     settings
+}
+
+fn is_cleanup_model(public_id: &str) -> bool {
+    windows_descriptor_for(public_id)
+        .map(|descriptor| descriptor.role == parrot_protocol::ModelRole::Cleanup)
+        .unwrap_or(false)
 }
 
 #[cfg(target_os = "windows")]

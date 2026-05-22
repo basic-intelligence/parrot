@@ -63,6 +63,7 @@ impl WindowsModelStore {
         &self,
         public_id: &str,
         settings: &AppSettings,
+        on_success: Option<Box<dyn FnOnce() + Send + 'static>>,
     ) -> anyhow::Result<Vec<ModelStatus>> {
         let descriptor = windows_descriptor_for(public_id)
             .ok_or_else(|| anyhow!("Unknown Windows model: {public_id}"))?;
@@ -100,22 +101,29 @@ impl WindowsModelStore {
         let downloads = Arc::clone(&self.downloads);
         thread::spawn(move || {
             let result = download_descriptor(&descriptor, &paths, Arc::clone(&downloads));
-            let mut downloads = downloads.lock().expect("model downloads poisoned");
-            match result {
-                Ok(()) => {
-                    downloads.remove(&descriptor.public_id);
+            let callback = {
+                let mut downloads = downloads.lock().expect("model downloads poisoned");
+                match result {
+                    Ok(()) => {
+                        downloads.remove(&descriptor.public_id);
+                        on_success
+                    }
+                    Err(error) => {
+                        downloads.insert(
+                            descriptor.public_id.clone(),
+                            DownloadProgress {
+                                downloading: false,
+                                progress_bytes: existing_temp_bytes(&descriptor, &paths),
+                                progress_total_bytes: descriptor.expected_bytes.max(1),
+                                error: Some(error.to_string()),
+                            },
+                        );
+                        None
+                    }
                 }
-                Err(error) => {
-                    downloads.insert(
-                        descriptor.public_id.clone(),
-                        DownloadProgress {
-                            downloading: false,
-                            progress_bytes: existing_temp_bytes(&descriptor, &paths),
-                            progress_total_bytes: descriptor.expected_bytes.max(1),
-                            error: Some(error.to_string()),
-                        },
-                    );
-                }
+            };
+            if let Some(on_success) = callback {
+                on_success();
             }
         });
 

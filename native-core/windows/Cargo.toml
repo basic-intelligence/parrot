@@ -23,7 +23,7 @@ whisper-rs = { version = "0.16.0", default-features = false }
 
 [features]
 default = []
-cuda = ["whisper-rs/cuda"]
+cuda = ["whisper-rs/cuda", "llama_cpp/cuda"]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.59", features = [
