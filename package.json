@@ -11,7 +11,10 @@
     "build:dmg": "tauri build --bundles dmg",
     "build:ui": "vite build",
     "tauri": "tauri",
-    "build:core:mac": "./scripts/build-native-core-macos.sh"
+    "build:core:mac": "./scripts/build-native-core-macos.sh",
+    "build:core:windows": "powershell -ExecutionPolicy Bypass -File scripts/build-native-core-windows.ps1",
+    "build:windows": "tauri build --target x86_64-pc-windows-msvc",
+    "build:windows:qa": "tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.qa.conf.json"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",

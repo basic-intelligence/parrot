@@ -83,7 +83,86 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: "Parrot v__VERSION__"
-          releaseBody: "Download the DMG below. Existing users can update from inside Parrot."
+          releaseBody: "Download the installer below. Existing users can update from inside Parrot."
           releaseDraft: true
           prerelease: false
+          includeUpdaterJson: true
           args: --target universal-apple-darwin
+
+  release-windows:
+    permissions:
+      contents: write
+
+    runs-on: windows-latest
+    needs: release-macos
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Ensure CMake is available
+        run: cmake --version
+
+      - name: Confirm Windows build tools
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe was not found; Visual Studio Build Tools are required."
+          }
+
+          $vsInstall = & $vswhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsInstall) {
+            throw "Visual Studio Desktop development with C++ tools were not found."
+          }
+          Write-Host "Visual Studio Build Tools: $vsInstall"
+
+          $ninja = Get-Command ninja -ErrorAction SilentlyContinue
+          if ($ninja) {
+            ninja --version
+          } else {
+            Write-Host "Ninja is not installed; the current Windows release build does not require it."
+          }
+
+      - name: Import Windows signing certificate
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: powershell -ExecutionPolicy Bypass -File scripts/import-windows-signing-certificate.ps1
+
+      - name: Prepare Windows signing config
+        run: powershell -ExecutionPolicy Bypass -File scripts/write-windows-signing-config.ps1
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and upload Tauri release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          PARROT_WINDOWS_CORE_VARIANTS: cpu,cuda
+        with:
+          tagName: v__VERSION__
+          releaseName: "Parrot v__VERSION__"
+          releaseBody: "Download the installer below. Existing users can update from inside Parrot."
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.signing.generated.json
+
+      - name: Verify Windows Authenticode signatures
+        run: powershell -ExecutionPolicy Bypass -File scripts/verify-windows-signatures.ps1

@@ -11,10 +11,10 @@ Helpful contributions include:
 - Bug reports with clear reproduction steps.
 - Feature requests that explain the user problem.
 - Pull requests that fix bugs or improve the app.
-- Testing on different Macs, microphones, languages, and macOS versions.
+- Testing on different Macs, Windows PCs, microphones, languages, and OS versions.
 - Documentation improvements.
 - Privacy, security, and accessibility feedback.
-- Windows and Linux sidecar work.
+- Windows QA, packaging/signing testing, and Linux sidecar work.
 
 ## Before opening an issue
 
@@ -23,8 +23,8 @@ Please check existing issues first to avoid duplicates.
 When reporting a bug, include:
 
 - Parrot version.
-- macOS version.
-- Apple Silicon or Intel.
+- Operating system version.
+- Hardware and CPU architecture.
 - What you expected to happen.
 - What actually happened.
 - Steps to reproduce.
@@ -36,7 +36,7 @@ For security or privacy vulnerabilities, do not open a public issue. See [SECURI
 
 ## Development setup
 
-Parrot is a Tauri 2 desktop app with a TypeScript/Vite frontend, Rust host, and Swift macOS native sidecar.
+Parrot is a Tauri 2 desktop app with a TypeScript/Vite frontend, Rust host, Swift macOS native sidecar, and Rust Windows sidecar.
 
 Install dependencies:
 
@@ -68,6 +68,18 @@ Build the macOS native sidecar:
 npm run build:core:mac
 ```
 
+Build the Windows native sidecar on Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-native-core-windows.ps1
+```
+
+The npm wrapper is:
+
+```sh
+npm run build:core:windows
+```
+
 Run Rust tests:
 
 ```sh
@@ -80,17 +92,65 @@ Run Swift tests:
 swift test --package-path native-core/macos
 ```
 
+Run Windows sidecar tests:
+
+```sh
+cargo test -p parrot-core --manifest-path native-core/windows/Cargo.toml
+```
+
 Build a packaged app:
 
 ```sh
 npm run build
 ```
 
+## Windows development setup
+
+Windows development uses the MSVC Rust target and native C/C++ build tools:
+
+- Windows 10 or Windows 11.
+- Visual Studio Build Tools with Desktop development with C++.
+- Rust stable with `x86_64-pc-windows-msvc`.
+- Node.js LTS and npm.
+- CMake.
+- Ninja when native model runtime dependencies require it.
+
+Install the Rust target if needed:
+
+```powershell
+rustup target add x86_64-pc-windows-msvc
+```
+
+The PowerShell build script compiles `native-core/windows`, verifies the sidecar binary, signs it when signing variables are present, and copies it to the Tauri sidecar path under `src-tauri/binaries/`.
+
+For local Windows QA without release signing or updater signing artifacts, run:
+
+```powershell
+npm run build:windows:qa
+```
+
+The installer will be under `target\x86_64-pc-windows-msvc\release\bundle\nsis\`.
+
+Windows release builds produce signed CPU and CUDA sidecar variants. The host selects the appropriate Windows sidecar at runtime, and whisper.cpp and llama.cpp runtime work must continue to build cleanly under MSVC.
+
+For Windows sidecar architecture and platform behavior notes, see `native-core/windows/README.md`.
+
+## Windows release signing
+
+Windows release builds use a certificate + SignTool Authenticode flow, separate from the Tauri updater signing key. Release CI imports the PFX from `WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD`, signs the Tauri executable, Windows sidecar, bundled DLLs when present, and NSIS installer, then runs:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify-windows-signatures.ps1
+```
+
+Before publishing a Windows release, confirm `Get-AuthenticodeSignature` reports `Valid` for the app executable, `parrot-core.exe`, and the installer. Keep certificates, private keys, passwords, signing configs, and signing logs in CI secrets or transient CI files only. SmartScreen can still require publisher/file reputation even when Authenticode signatures are valid.
+
 ## Project structure
 
 - `src/` — TypeScript frontend.
 - `src-tauri/src/` — Rust/Tauri host.
 - `native-core/macos/` — Swift macOS sidecar.
+- `native-core/windows/` — Rust Windows sidecar and platform adapters.
 - `native-core/shared/` — Shared product resources and test fixtures.
 - `crates/` — Shared Rust product logic and DTOs.
 - `public/` — Static frontend assets.

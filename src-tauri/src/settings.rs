@@ -1,5 +1,7 @@
 use anyhow::Context;
-use parrot_settings::normalize_settings;
+use parrot_settings::{
+    default_settings_for_platform, normalize_settings_for_platform, SettingsPlatform,
+};
 pub use parrot_settings::{AppSettings, ShortcutSettings};
 use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager};
@@ -28,10 +30,13 @@ impl SettingsStore {
                     || missing_input_monitoring_onboarding,
             )
         } else {
-            (AppSettings::default(), false)
+            (
+                default_settings_for_platform(current_settings_platform()),
+                false,
+            )
         };
 
-        migrated |= normalize_settings(&mut settings);
+        migrated |= normalize_settings_for_platform(&mut settings, current_settings_platform());
 
         if migrated {
             fs::write(&path, serde_json::to_vec_pretty(&settings)?)?;
@@ -40,9 +45,53 @@ impl SettingsStore {
     }
 
     pub fn save(&mut self, mut settings: AppSettings) -> anyhow::Result<()> {
-        normalize_settings(&mut settings);
+        normalize_settings_for_platform(&mut settings, current_settings_platform());
         self.settings = settings;
         fs::write(&self.path, serde_json::to_vec_pretty(&self.settings)?)?;
         Ok(())
+    }
+}
+
+fn current_settings_platform() -> SettingsPlatform {
+    if cfg!(target_os = "windows") {
+        SettingsPlatform::Windows
+    } else {
+        SettingsPlatform::Macos
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn current_platform_uses_windows_shortcut_defaults() {
+        let settings = default_settings_for_platform(current_settings_platform());
+
+        assert_eq!(settings.push_to_talk_shortcut.display_name, "Right Ctrl");
+        assert_eq!(
+            settings.push_to_talk_shortcut.windows_virtual_keys(),
+            &[163]
+        );
+        assert_eq!(
+            settings.hands_free_shortcut.display_name,
+            "Left Ctrl + Space"
+        );
+        assert_eq!(
+            settings.hands_free_shortcut.windows_virtual_keys(),
+            &[162, 32]
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn current_platform_preserves_macos_shortcut_defaults() {
+        let settings = default_settings_for_platform(current_settings_platform());
+
+        assert_eq!(settings.push_to_talk_shortcut.display_name, "Fn");
+        assert_eq!(settings.push_to_talk_shortcut.macos_key_codes(), &[63]);
+        assert_eq!(settings.hands_free_shortcut.display_name, "Control + Space");
+        assert_eq!(settings.hands_free_shortcut.macos_key_codes(), &[59, 49]);
     }
 }

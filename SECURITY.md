@@ -1,6 +1,6 @@
 # Security
 
-Parrot is local-first, but it still touches sensitive areas: audio capture, macOS permissions, clipboard paste, local history/settings, model downloads, updates, and native sidecars.
+Parrot is local-first, but it still touches sensitive areas: audio capture, macOS permissions, Windows microphone privacy settings, clipboard paste, focused-text context reads, local history/settings, model downloads, updates, and native sidecars.
 
 ## Reporting security issues
 
@@ -13,7 +13,7 @@ Please include whatever helps explain the issue:
 - What happened and why it matters.
 - Steps to reproduce, if you have them.
 - Parrot version or commit.
-- macOS version and hardware, if relevant.
+- Operating system version and hardware, if relevant.
 - Logs, screenshots, or examples, if useful.
 
 For normal bugs and feature requests, GitHub issues are fine.

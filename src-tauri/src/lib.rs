@@ -8,14 +8,55 @@ use commands::*;
 use core_bridge::CoreBridge;
 use parrot_protocol::NativeCoreMethod;
 use settings::SettingsStore;
+use std::{sync::OnceLock, time::Duration};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
-pub struct AppState {
+pub struct AppRuntime {
     pub settings: Mutex<SettingsStore>,
     pub history: Mutex<history::HistoryStore>,
     pub core: CoreBridge,
+}
+
+pub struct AppState {
+    runtime: OnceLock<AppRuntime>,
+    ready: Notify,
+}
+
+impl AppState {
+    fn new() -> Self {
+        Self {
+            runtime: OnceLock::new(),
+            ready: Notify::new(),
+        }
+    }
+
+    fn set_runtime(&self, runtime: AppRuntime) -> anyhow::Result<()> {
+        self.runtime
+            .set(runtime)
+            .map_err(|_| anyhow::anyhow!("app runtime was already initialized"))?;
+        self.ready.notify_waiters();
+        Ok(())
+    }
+
+    pub async fn runtime(&self) -> anyhow::Result<&AppRuntime> {
+        if let Some(runtime) = self.runtime.get() {
+            return Ok(runtime);
+        }
+
+        let runtime = tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                self.ready.notified().await;
+                if let Some(runtime) = self.runtime.get() {
+                    return runtime;
+                }
+            }
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Parrot is still starting."))?;
+        Ok(runtime)
+    }
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -43,7 +84,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init());
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
     builder
@@ -57,6 +98,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--background"]),
         ))
+        .manage(AppState::new())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
@@ -82,6 +124,8 @@ pub fn run() {
             };
 
             let initial_settings = settings.settings.clone();
+            #[cfg(target_os = "windows")]
+            let warm_models_on_boot = initial_settings.onboarding_completed;
             if let Err(error) = tauri::async_runtime::block_on(initialize_core(
                 &app_handle,
                 &core,
@@ -90,6 +134,12 @@ pub fn run() {
                 eprintln!("failed to initialize native core: {error:?}");
                 return Err(error.into());
             }
+
+            app.state::<AppState>().set_runtime(AppRuntime {
+                settings: Mutex::new(settings),
+                history: Mutex::new(history),
+                core: core.clone(),
+            })?;
 
             let core_for_boot = core.clone();
             let app_for_boot = app_handle.clone();
@@ -130,15 +180,19 @@ pub fn run() {
                             );
                         }
                     }
+
+                    #[cfg(target_os = "windows")]
+                    if warm_models_on_boot {
+                        if let Err(error) = core_for_boot
+                            .request(NativeCoreMethod::WarmModels, serde_json::json!({}))
+                            .await
+                        {
+                            eprintln!("Windows model warmup failed: {error}");
+                        }
+                    }
                 }
 
-                // Keep startup lightweight: model warmup can be requested explicitly after setup.
-            });
-
-            app.manage(AppState {
-                settings: Mutex::new(settings),
-                history: Mutex::new(history),
-                core,
+                // Fresh setup warms models explicitly before completing onboarding.
             });
 
             if should_show_main_window {

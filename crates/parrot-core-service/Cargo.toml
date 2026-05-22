@@ -8,4 +8,14 @@ rust-version = "1.77.2"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 parrot-audio = { path = "../parrot-audio" }
+parrot-cleanup = { path = "../parrot-cleanup" }
+parrot-language = { path = "../parrot-language" }
+parrot-models = { path = "../parrot-models" }
+parrot-paste = { path = "../parrot-paste" }
+parrot-prompts = { path = "../parrot-prompts" }
 parrot-protocol = { path = "../parrot-protocol" }
+parrot-settings = { path = "../parrot-settings" }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "sync"] }

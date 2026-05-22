@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-Parrot is a Tauri 2 desktop app with a TypeScript/Vite frontend, Rust host, and Swift macOS native core. Frontend code lives in `src/`, with shared styling in `src/style.css` and recording UI assets in `src/recording.*`. Rust/Tauri code is in `src-tauri/src/`, with capabilities, permissions, icons, and bundle assets under `src-tauri/`. The macOS sidecar is in `native-core/macos/`; shared prompts and language data are in `native-core/shared/`. Static assets belong in `public/`, and helper scripts belong in `scripts/`.
+Parrot is a Tauri 2 desktop app with a TypeScript/Vite frontend, Rust host, Swift macOS native core, and Rust Windows native core. Frontend code lives in `src/`, with shared styling in `src/style.css` and recording UI assets in `src/recording.*`. Rust/Tauri code is in `src-tauri/src/`, with capabilities, permissions, icons, and bundle assets under `src-tauri/`. Native sidecars live in `native-core/macos/` and `native-core/windows/`; `native-core/linux/` is a future placeholder. Shared prompts and language data are in `native-core/shared/`. Static assets belong in `public/`, and helper scripts belong in `scripts/`.
 
 ## Build, Test, and Development Commands
 
@@ -12,8 +12,10 @@ Parrot is a Tauri 2 desktop app with a TypeScript/Vite frontend, Rust host, and 
 - `npx serve . -l 3000` serves static files locally when a simple file server is enough.
 - `npm run build:ui` builds the frontend.
 - `npm run build:core:mac` builds the macOS native core.
+- `npm run build:core:windows` builds the Windows native core sidecar.
 - `npm run build` builds the packaged Tauri app.
 - `cargo test --manifest-path src-tauri/Cargo.toml` runs Rust tests.
+- `cargo test --manifest-path native-core/windows/Cargo.toml` runs Windows sidecar tests.
 - `swift test --package-path native-core/macos` runs Swift tests.
 
 ## Coding Style & Naming Conventions
@@ -31,6 +33,8 @@ Use concise Conventional Commit-style messages seen in history, such as `docs: u
 ## Security, Configuration & Agent Notes
 
 Parrot is local-first. Do not add telemetry, analytics, cloud processing, or network requests without explicit documentation and privacy review. Never read `.env` or `.env.local`; ask for specific values if needed. Use the `code` command for opening files, not `open`. On macOS, assume Apple Silicon unless stated otherwise.
+
+Keep the root `README.md` user-facing and concise. Put platform-specific caveats, limitations, build details, and signing notes in the relevant platform README, `CONTRIBUTING.md`, `PRIVACY.md`, or `SECURITY.md`.
 
 ## Cross-Platform Readiness
 

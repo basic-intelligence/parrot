@@ -145,6 +145,13 @@ impl ShortcutSettings {
             .as_deref()
             .unwrap_or_default()
     }
+
+    pub fn windows_virtual_keys(&self) -> &[u16] {
+        self.platform_codes
+            .windows_virtual_keys
+            .as_deref()
+            .unwrap_or_default()
+    }
 }
 
 pub fn default_shortcut_enabled() -> bool {
@@ -239,6 +246,42 @@ pub fn default_hands_free_shortcut() -> ShortcutSettings {
         platform_codes: ShortcutPlatformCodes {
             macos_key_codes: Some(vec![59, 49]),
             windows_virtual_keys: None,
+            linux_key_codes: None,
+        },
+    }
+}
+
+pub fn default_windows_push_to_talk_shortcut() -> ShortcutSettings {
+    ShortcutSettings {
+        display_name: "Right Ctrl".into(),
+        mode: ShortcutMode::Hold,
+        enabled: true,
+        double_tap_toggle: false,
+        chord: Some(ShortcutChord {
+            modifiers: vec![ShortcutModifier::Control],
+            key: None,
+        }),
+        platform_codes: ShortcutPlatformCodes {
+            macos_key_codes: None,
+            windows_virtual_keys: Some(vec![163]),
+            linux_key_codes: None,
+        },
+    }
+}
+
+pub fn default_windows_hands_free_shortcut() -> ShortcutSettings {
+    ShortcutSettings {
+        display_name: "Left Ctrl + Space".into(),
+        mode: ShortcutMode::Toggle,
+        enabled: true,
+        double_tap_toggle: false,
+        chord: Some(ShortcutChord {
+            modifiers: vec![ShortcutModifier::Control],
+            key: Some(ShortcutKey::Space),
+        }),
+        platform_codes: ShortcutPlatformCodes {
+            macos_key_codes: None,
+            windows_virtual_keys: Some(vec![162, 32]),
             linux_key_codes: None,
         },
     }
@@ -527,6 +570,26 @@ pub enum NativeCoreMethod {
     CaptureShortcut,
 }
 
+pub const NATIVE_CORE_EVENT_RECORDING_STARTED: &str = "parrot:recording-started";
+pub const NATIVE_CORE_EVENT_RECORDING_PROCESSING: &str = "parrot:recording-processing";
+pub const NATIVE_CORE_EVENT_RECORDING_FINISHED: &str = "parrot:recording-finished";
+pub const NATIVE_CORE_EVENT_RECORDING_FAILED: &str = "parrot:recording-failed";
+pub const NATIVE_CORE_EVENT_RECORDING_CANCELLED: &str = "parrot:recording-cancelled";
+pub const NATIVE_CORE_EVENT_HOTKEY_MONITOR_FAILED: &str = "parrot:hotkey-monitor-failed";
+pub const NATIVE_CORE_EVENT_DISCONNECTED: &str = "parrot:native-core-disconnected";
+pub const NATIVE_CORE_EVENT_RECOVERED: &str = "parrot:native-core-recovered";
+
+pub const NATIVE_CORE_EVENT_NAMES: [&str; 8] = [
+    NATIVE_CORE_EVENT_RECORDING_STARTED,
+    NATIVE_CORE_EVENT_RECORDING_PROCESSING,
+    NATIVE_CORE_EVENT_RECORDING_FINISHED,
+    NATIVE_CORE_EVENT_RECORDING_FAILED,
+    NATIVE_CORE_EVENT_RECORDING_CANCELLED,
+    NATIVE_CORE_EVENT_HOTKEY_MONITOR_FAILED,
+    NATIVE_CORE_EVENT_DISCONNECTED,
+    NATIVE_CORE_EVENT_RECOVERED,
+];
+
 impl NativeCoreMethod {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -584,6 +647,236 @@ pub enum SoundEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn all_native_core_methods() -> [(NativeCoreMethod, &'static str); 14] {
+        [
+            (NativeCoreMethod::Initialize, "initialize"),
+            (NativeCoreMethod::PermissionStatuses, "permissionStatuses"),
+            (NativeCoreMethod::RequestPermission, "requestPermission"),
+            (NativeCoreMethod::UpdateSettings, "updateSettings"),
+            (NativeCoreMethod::WarmModels, "warmModels"),
+            (NativeCoreMethod::ModelStatuses, "modelStatuses"),
+            (NativeCoreMethod::DownloadModel, "downloadModel"),
+            (NativeCoreMethod::DeleteModel, "deleteModel"),
+            (NativeCoreMethod::ListAudioDevices, "listAudioDevices"),
+            (NativeCoreMethod::StartRecording, "startRecording"),
+            (NativeCoreMethod::StopRecording, "stopRecording"),
+            (NativeCoreMethod::StartHotkeyMonitor, "startHotkeyMonitor"),
+            (NativeCoreMethod::StopHotkeyMonitor, "stopHotkeyMonitor"),
+            (NativeCoreMethod::CaptureShortcut, "captureShortcut"),
+        ]
+    }
+
+    #[test]
+    fn native_core_request_round_trips_all_method_names() {
+        for (method, expected_name) in all_native_core_methods() {
+            let request = NativeCoreRequest {
+                id: format!("request-{expected_name}"),
+                method,
+                payload: serde_json::json!({ "marker": expected_name }),
+            };
+
+            let value = serde_json::to_value(&request).unwrap();
+            assert_eq!(value["id"], format!("request-{expected_name}"));
+            assert_eq!(value["method"], expected_name);
+            assert_eq!(value["payload"]["marker"], expected_name);
+
+            let decoded: NativeCoreRequest = serde_json::from_value(value).unwrap();
+            assert_eq!(decoded.id, format!("request-{expected_name}"));
+            assert_eq!(decoded.method, method);
+            assert_eq!(
+                decoded.payload,
+                serde_json::json!({ "marker": expected_name })
+            );
+        }
+    }
+
+    #[test]
+    fn native_core_response_round_trips_success_envelope() {
+        let response = NativeCoreResponse {
+            id: "response-success".into(),
+            ok: true,
+            payload: Some(serde_json::json!({
+                "status": "initialized",
+                "models": []
+            })),
+            error: None,
+        };
+
+        let value = serde_json::to_value(&response).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "id": "response-success",
+                "ok": true,
+                "payload": {
+                    "status": "initialized",
+                    "models": []
+                },
+                "error": null
+            })
+        );
+
+        let decoded: NativeCoreResponse = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded.id, response.id);
+        assert!(decoded.ok);
+        assert_eq!(decoded.payload, response.payload);
+        assert_eq!(decoded.error, None);
+    }
+
+    #[test]
+    fn native_core_response_round_trips_error_envelope() {
+        let response = NativeCoreResponse {
+            id: "response-error".into(),
+            ok: false,
+            payload: None,
+            error: Some("Unknown native-core method: nope".into()),
+        };
+
+        let value = serde_json::to_value(&response).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "id": "response-error",
+                "ok": false,
+                "payload": null,
+                "error": "Unknown native-core method: nope"
+            })
+        );
+
+        let decoded: NativeCoreResponse = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded.id, response.id);
+        assert!(!decoded.ok);
+        assert_eq!(decoded.payload, None);
+        assert_eq!(decoded.error, response.error);
+    }
+
+    #[test]
+    fn native_core_event_names_are_golden_and_round_trip() {
+        assert_eq!(
+            NATIVE_CORE_EVENT_NAMES,
+            [
+                "parrot:recording-started",
+                "parrot:recording-processing",
+                "parrot:recording-finished",
+                "parrot:recording-failed",
+                "parrot:recording-cancelled",
+                "parrot:hotkey-monitor-failed",
+                "parrot:native-core-disconnected",
+                "parrot:native-core-recovered",
+            ]
+        );
+
+        for event_name in NATIVE_CORE_EVENT_NAMES {
+            let event = NativeCoreEvent {
+                event: event_name.into(),
+                payload: serde_json::json!({ "kind": "dictation" }),
+            };
+
+            let value = serde_json::to_value(&event).unwrap();
+            assert_eq!(value["event"], event_name);
+            assert_eq!(value["payload"]["kind"], "dictation");
+
+            let decoded: NativeCoreEvent = serde_json::from_value(value).unwrap();
+            assert_eq!(decoded.event, event_name);
+            assert_eq!(decoded.payload, serde_json::json!({ "kind": "dictation" }));
+        }
+    }
+
+    #[test]
+    fn windows_permission_snapshot_fixture_requires_only_microphone() {
+        let snapshot = PermissionSnapshot {
+            requirements: vec![PermissionRequirement {
+                kind: PermissionKind::Microphone,
+                title: "Microphone".into(),
+                description: "Record your voice locally for dictation.".into(),
+                state: PermissionState::Granted,
+                required: true,
+                requestable: true,
+                opens_settings: true,
+            }],
+            all_required_granted: true,
+            microphone: Some(PermissionState::Granted),
+            accessibility: None,
+            input_monitoring: None,
+            all_granted: Some(true),
+        };
+
+        let value = serde_json::to_value(&snapshot).unwrap();
+        assert_eq!(value["requirements"].as_array().unwrap().len(), 1);
+        assert_eq!(value["requirements"][0]["kind"], "microphone");
+        assert_eq!(value["requirements"][0]["state"], "granted");
+        assert_eq!(value["allRequiredGranted"], true);
+        assert_eq!(value["accessibility"], serde_json::Value::Null);
+        assert_eq!(value["inputMonitoring"], serde_json::Value::Null);
+
+        let decoded: PermissionSnapshot = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded, snapshot);
+    }
+
+    #[test]
+    fn windows_shortcut_settings_fixture_uses_virtual_keys() {
+        let push_to_talk = default_windows_push_to_talk_shortcut();
+        let hands_free = default_windows_hands_free_shortcut();
+
+        let push_value = serde_json::to_value(&push_to_talk).unwrap();
+        assert_eq!(push_value["displayName"], "Right Ctrl");
+        assert_eq!(push_value["mode"], "hold");
+        assert_eq!(
+            push_value["platformCodes"]["windowsVirtualKeys"],
+            serde_json::json!([163])
+        );
+        assert_eq!(
+            push_value["platformCodes"]["macosKeyCodes"],
+            serde_json::Value::Null
+        );
+
+        let hands_free_value = serde_json::to_value(&hands_free).unwrap();
+        assert_eq!(hands_free_value["displayName"], "Left Ctrl + Space");
+        assert_eq!(hands_free_value["mode"], "toggle");
+        assert_eq!(
+            hands_free_value["platformCodes"]["windowsVirtualKeys"],
+            serde_json::json!([162, 32])
+        );
+        assert_eq!(
+            hands_free_value["chord"]["modifiers"],
+            serde_json::json!(["control"])
+        );
+        assert_eq!(hands_free_value["chord"]["key"], "space");
+
+        let decoded: ShortcutSettings = serde_json::from_value(hands_free_value).unwrap();
+        assert_eq!(decoded, hands_free);
+    }
+
+    #[test]
+    fn windows_native_core_paths_fixture_round_trips_camel_case() {
+        let paths = NativeCorePaths {
+            app_data_dir: "C:/Users/Alice/AppData/Roaming/in.basic.parrot".into(),
+            models_dir: "C:/Users/Alice/AppData/Local/Parrot/Models".into(),
+            speech_models_dir: "C:/Users/Alice/AppData/Local/Parrot/Models/whisper-models".into(),
+            cleanup_models_dir: "C:/Users/Alice/AppData/Local/Parrot/Models/cleanup-models".into(),
+            resources_dir: "C:/Program Files/Parrot/resources".into(),
+            shared_resources_dir: "C:/Program Files/Parrot/resources/native-core/shared".into(),
+            temp_dir: "C:/Users/Alice/AppData/Local/Temp".into(),
+        };
+
+        let value = serde_json::to_value(&paths).unwrap();
+        assert_eq!(
+            value["appDataDir"],
+            "C:/Users/Alice/AppData/Roaming/in.basic.parrot"
+        );
+        assert_eq!(
+            value["speechModelsDir"],
+            "C:/Users/Alice/AppData/Local/Parrot/Models/whisper-models"
+        );
+        assert_eq!(
+            value["sharedResourcesDir"],
+            "C:/Program Files/Parrot/resources/native-core/shared"
+        );
+
+        let decoded: NativeCorePaths = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded, paths);
+    }
 
     #[test]
     fn decodes_legacy_shortcut_shape_into_platform_codes() {

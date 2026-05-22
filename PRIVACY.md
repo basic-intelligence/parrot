@@ -1,6 +1,6 @@
 # Privacy Notice
 
-Last updated: May 12, 2026
+Last updated: May 19, 2026
 
 Parrot is designed to be a local-first dictation app. This notice explains what Parrot does with audio, transcripts, settings, model downloads, update checks, and permissions.
 
@@ -8,7 +8,7 @@ Parrot is designed to be a local-first dictation app. This notice explains what 
 
 Parrot does not require an account, does not run ads, does not include analytics or telemetry, and does not send your dictated audio, transcripts, dictionary, cleanup prompt, or settings to Parrot servers.
 
-Speech-to-text and cleanup run on your Mac using local models. The only routine network requests made by Parrot are requests you initiate to download local models or check/install app updates.
+Speech-to-text and cleanup run on your device using local models. The only routine network requests made by Parrot are requests you initiate to download local models or check/install app updates.
 
 ## What Parrot processes locally
 
@@ -36,36 +36,42 @@ If transcript history is disabled, Parrot does not save transcripts to the local
 
 ## Cleanup and local AI models
 
-If cleanup is enabled, Parrot sends the raw transcript, your cleanup prompt, dictionary terms, and language metadata to a local cleanup model running on your Mac. This is local inference, not a cloud request.
+If cleanup is enabled, Parrot sends the raw transcript, your cleanup prompt, dictionary terms, and language metadata to a local cleanup model running on your device. This is local inference, not a cloud request.
 
 The local models do not train on, learn from, or upload your dictated content.
 
 ## Clipboard and paste behavior
 
-To paste text into the app you were using, Parrot temporarily places the dictated text on the macOS clipboard and sends a paste command. Parrot then attempts to restore the previous clipboard contents shortly afterward.
+To paste text into the app you were using, Parrot temporarily places the dictated text on the system clipboard and sends a paste command. On Windows, this uses the clipboard plus Ctrl+V through `SendInput`. Parrot then attempts to restore the previous clipboard contents shortly afterward.
 
 Other apps, clipboard managers, or system tools that monitor the clipboard may be able to see or store the dictated text while it is on the clipboard. This is outside Parrot's control.
 
-Parrot may read a short amount of text immediately before the cursor in the target app to improve spacing and capitalization when pasting. This context is used in memory for formatting and is not saved or sent to Parrot servers.
+Parrot may read a short amount of text immediately before the cursor in the target app to improve spacing and capitalization when pasting. On Windows, this uses UI Automation text patterns when the focused app exposes them. This context is used in memory for formatting and is not saved or sent to Parrot servers.
+
+On Windows, paste into elevated/admin apps can fail because normal user apps cannot inject input into higher-integrity apps. Parrot reports that as a paste failure instead of silently retrying with elevated privileges.
 
 ## Local storage
 
-Parrot stores app data locally on your Mac. Depending on how the app is installed, local data is typically stored in macOS Application Support locations such as:
+Parrot stores app data locally on your device. Depending on how the app is installed, local data is typically stored in locations such as:
 
 - `~/Library/Application Support/in.basic.parrot/` for settings and history.
 - `~/Library/Application Support/Parrot/` for downloaded speech and cleanup models.
+- `%APPDATA%\in.basic.parrot\` for Windows settings and history.
+- `%LOCALAPPDATA%\Parrot\Models\` for Windows speech and cleanup models.
 
 Downloaded models remain on disk until you delete them in Parrot or remove the model files manually.
 
 ## Permissions
 
-Parrot asks macOS for permissions only to provide dictation features:
+On macOS, Parrot asks for permissions only to provide dictation features:
 
 - **Microphone**: records your voice for local transcription.
 - **Accessibility**: lets Parrot consume the configured shortcut, activate the original target app, read limited focused text context for paste formatting, and paste the finished text.
 - **Input Monitoring**: may be required on some Macs so Parrot can listen for your configured global shortcuts while you use other apps.
 
 Parrot uses shortcut and keyboard events to detect configured shortcuts and cancellation. Parrot does not use these permissions to build a keylogger or store general keystroke history.
+
+On Windows, Parrot requires microphone access. If capture is blocked, check Windows privacy settings, including **Microphone access**, **Let apps access your microphone**, and **Let desktop apps access your microphone**. Windows shortcuts and paste do not have separate permission prompts, but Parrot uses a low-level keyboard hook for your configured shortcuts, UI Automation for bounded focused-text context when available, the clipboard for paste, and `SendInput` to send Ctrl+V.
 
 ## Network requests
 
@@ -74,7 +80,7 @@ Parrot does not send dictated audio or transcript content in network requests.
 Parrot may make network requests in these cases:
 
 1. **Model downloads**: when you choose to download a local speech or cleanup model, Parrot downloads model files from third-party model hosts such as Hugging Face or model repositories used by WhisperKit.
-2. **Update checks and installs**: when you manually check for or install app updates, Parrot contacts GitHub Releases to retrieve update metadata and download signed update files.
+2. **Update checks and installs**: when you manually check for or install app updates on supported platforms, Parrot contacts GitHub Releases to retrieve update metadata and download signed update files.
 3. **GitHub project activity**: if you visit the repository, download a release in your browser, open an issue, submit a pull request, or otherwise interact with the project on GitHub, GitHub processes that activity under GitHub's own privacy terms.
 
 Those third-party services may receive standard request metadata, such as IP address, date and time, requested file, user agent, operating system, or similar network information. Their privacy policies govern their handling of that information.
@@ -96,6 +102,7 @@ You can control Parrot data in these ways:
 - Reset or edit your cleanup prompt.
 - Delete downloaded models from the Local models section.
 - Revoke macOS permissions in System Settings.
+- Revoke Windows microphone access in Windows privacy settings.
 - Uninstall Parrot and remove its local Application Support data if you want to remove local app data manually.
 
 ## Maintainer access

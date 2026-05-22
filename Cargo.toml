@@ -11,6 +11,7 @@ members = [
   "crates/parrot-audio",
   "crates/parrot-assets",
   "crates/parrot-core-service",
+  "native-core/windows",
 ]
 resolver = "2"
 
@@ -29,3 +30,7 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+[profile.native-core-release]
+inherits = "release"
+opt-level = 3

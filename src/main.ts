@@ -88,6 +88,7 @@ type UpdateDownloadProgress = {
 };
 type MainTab = "general" | "recording" | "cleanup" | "history" | "about";
 type SetupStep = "permissions" | "language" | "models";
+type AppPlatform = "macos" | "windows" | "linux" | "unknown";
 type IconName =
   | "general"
   | "recording"
@@ -147,6 +148,9 @@ const ICONS: Record<IconName, string> = {
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>',
 };
 
+const APP_PLATFORM = detectAppPlatform();
+const UPDATER_PLATFORMS = new Set<AppPlatform>(["macos", "windows"]);
+
 const SETUP_STEPS: Array<{
   id: SetupStep;
   label: string;
@@ -158,7 +162,7 @@ const SETUP_STEPS: Array<{
     label: "Permissions",
     heading: "Enable Parrot",
     description:
-      "Choose which language(s) you'll speak, enable the required macOS permissions, then download their local models Parrot needs.",
+      "Choose which language(s) you'll speak, enable required permissions, then download the local models Parrot needs.",
   },
   {
     id: "language",
@@ -238,6 +242,32 @@ const DEFAULT_HANDS_FREE_SHORTCUT: ShortcutSettings = {
   },
 };
 
+const WINDOWS_DEFAULT_PUSH_TO_TALK_SHORTCUT: ShortcutSettings = {
+  displayName: "Right Ctrl",
+  mode: "hold",
+  enabled: true,
+  doubleTapToggle: false,
+  chord: { modifiers: ["control"], key: null },
+  platformCodes: {
+    macosKeyCodes: null,
+    windowsVirtualKeys: [163],
+    linuxKeyCodes: null,
+  },
+};
+
+const WINDOWS_DEFAULT_HANDS_FREE_SHORTCUT: ShortcutSettings = {
+  displayName: "Left Ctrl + Space",
+  mode: "toggle",
+  enabled: true,
+  doubleTapToggle: false,
+  chord: { modifiers: ["control"], key: "space" },
+  platformCodes: {
+    macosKeyCodes: null,
+    windowsVirtualKeys: [162, 32],
+    linuxKeyCodes: null,
+  },
+};
+
 const APP_VERSION = packageJson.version;
 const PARROT_REPO_URL = "https://github.com/basic-intelligence/parrot";
 const BUG_REPORT_URL = `${PARROT_REPO_URL}/issues/new?template=bug_report.yml`;
@@ -250,6 +280,82 @@ const EMAIL_URL = "mailto:richard@basic.in?subject=Parrot%20feedback";
 const AUTO_UPDATE_CHECK_DELAY_MS = 4_000;
 const AUTO_UPDATE_CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const LAST_UPDATE_CHECK_KEY = "parrot:lastUpdateCheckAt";
+
+function detectAppPlatform(): AppPlatform {
+  const userAgentDataPlatform =
+    (navigator as Navigator & { userAgentData?: { platform?: string } })
+      .userAgentData?.platform ?? "";
+  const platform = `${userAgentDataPlatform} ${navigator.platform} ${navigator.userAgent}`;
+
+  if (/windows|win32|win64|wow64|windows nt/i.test(platform)) {
+    return "windows";
+  }
+  if (/macintosh|mac os|macintel|macppc|mac68k/i.test(platform)) {
+    return "macos";
+  }
+  if (/linux|x11/i.test(platform)) {
+    return "linux";
+  }
+  return "unknown";
+}
+
+function isWindowsPlatform() {
+  return APP_PLATFORM === "windows";
+}
+
+function isMacosPlatform() {
+  return APP_PLATFORM === "macos";
+}
+
+function updatesSupportedOnPlatform() {
+  return UPDATER_PLATFORMS.has(APP_PLATFORM);
+}
+
+function localDeviceLabel() {
+  if (isWindowsPlatform()) return "this PC";
+  if (isMacosPlatform()) return "your Mac";
+  return "your device";
+}
+
+function cloneShortcut(shortcut: ShortcutSettings): ShortcutSettings {
+  return {
+    ...shortcut,
+    chord: shortcut.chord
+      ? {
+          modifiers: [...shortcut.chord.modifiers],
+          key: shortcut.chord.key,
+        }
+      : null,
+    platformCodes: {
+      macosKeyCodes: shortcut.platformCodes.macosKeyCodes
+        ? [...shortcut.platformCodes.macosKeyCodes]
+        : null,
+      windowsVirtualKeys: shortcut.platformCodes.windowsVirtualKeys
+        ? [...shortcut.platformCodes.windowsVirtualKeys]
+        : null,
+      linuxKeyCodes: shortcut.platformCodes.linuxKeyCodes
+        ? [...shortcut.platformCodes.linuxKeyCodes]
+        : null,
+    },
+    macosKeyCodes: shortcut.macosKeyCodes
+      ? [...shortcut.macosKeyCodes]
+      : undefined,
+  };
+}
+
+function defaultShortcutSettings() {
+  if (isWindowsPlatform()) {
+    return {
+      pushToTalkShortcut: cloneShortcut(WINDOWS_DEFAULT_PUSH_TO_TALK_SHORTCUT),
+      handsFreeShortcut: cloneShortcut(WINDOWS_DEFAULT_HANDS_FREE_SHORTCUT),
+    };
+  }
+
+  return {
+    pushToTalkShortcut: cloneShortcut(DEFAULT_PUSH_TO_TALK_SHORTCUT),
+    handsFreeShortcut: cloneShortcut(DEFAULT_HANDS_FREE_SHORTCUT),
+  };
+}
 
 async function boot() {
   await installEventListeners();
@@ -293,7 +399,9 @@ async function installEventListeners() {
   await listen<{ error?: string }>("parrot:hotkey-monitor-failed", (event) => {
     const message =
       event.payload.error ||
-      "Shortcut monitor failed. Check Accessibility permission.";
+      (isWindowsPlatform()
+        ? "Shortcut monitor failed. Try a different Windows shortcut."
+        : "Shortcut monitor failed. Check Accessibility permission.");
     void maybeRequireInputMonitoring(message);
     shortcutNotice = {
       level: "error",
@@ -367,6 +475,19 @@ async function checkForUpdatesManually() {
 }
 
 async function checkForUpdates(source: UpdateCheckSource) {
+  if (!updatesSupportedOnPlatform()) {
+    if (source === "manual") {
+      updateStatus = "idle";
+      setSettingsNotice(
+        "updates",
+        "Updates are available in Parrot builds that enable the updater plugin.",
+        "info",
+      );
+      render();
+    }
+    return;
+  }
+
   if (checkingForUpdate || installingUpdate) return;
 
   const manual = source === "manual";
@@ -413,6 +534,8 @@ async function checkForUpdates(source: UpdateCheckSource) {
 }
 
 function scheduleAutomaticUpdateChecks() {
+  if (!updatesSupportedOnPlatform()) return;
+
   window.setTimeout(() => {
     void maybeRunAutomaticUpdateCheck({ force: true });
   }, AUTO_UPDATE_CHECK_DELAY_MS);
@@ -434,6 +557,8 @@ async function maybeRunAutomaticUpdateCheck(
 }
 
 async function setUpdateBadge(available: boolean, version: string | null) {
+  if (!updatesSupportedOnPlatform()) return;
+
   try {
     await setUpdateBadgeApi(available, version);
   } catch (error) {
@@ -527,6 +652,8 @@ function showingSetupGate() {
 function inputMonitoringShownInOnboarding(
   settings: AppSettings | null | undefined,
 ) {
+  if (!isMacosPlatform()) return false;
+
   return (
     inputMonitoringFallbackRequired ||
     settings?.inputMonitoringPermissionShownInOnboarding === true
@@ -548,6 +675,10 @@ function setupPermissionsComplete(
     return requiredGranted && inputMonitoringReady;
   }
 
+  if (isWindowsPlatform()) {
+    return permissionState(permissions, "microphone") === "granted";
+  }
+
   return (
     permissionState(permissions, "microphone") === "granted" &&
     permissionState(permissions, "accessibility") === "granted" &&
@@ -557,6 +688,8 @@ function setupPermissionsComplete(
 }
 
 function shouldShowInputMonitoringPermission(settings: AppSettings) {
+  if (!isMacosPlatform()) return false;
+
   return settings.inputMonitoringPermissionShownInOnboarding;
 }
 
@@ -566,6 +699,9 @@ function permissionsAllGranted(permissions: PermissionSnapshot) {
   }
   if (typeof permissions.allGranted === "boolean") {
     return permissions.allGranted;
+  }
+  if (isWindowsPlatform()) {
+    return permissionState(permissions, "microphone") === "granted";
   }
   return (
     permissionState(permissions, "microphone") === "granted" &&
@@ -609,6 +745,20 @@ function permissionRequirementsForDisplay(
 function fallbackPermissionRequirements(
   permissions: PermissionSnapshot,
 ): PermissionRequirement[] {
+  if (isWindowsPlatform()) {
+    return [
+      {
+        kind: "microphone",
+        title: "Microphone",
+        description: "Record your voice locally for dictation.",
+        state: permissionState(permissions, "microphone"),
+        required: true,
+        requestable: true,
+        opensSettings: true,
+      },
+    ];
+  }
+
   return [
     {
       kind: "microphone",
@@ -665,6 +815,8 @@ async function persistInputMonitoringShownInOnboarding() {
 }
 
 async function maybeRequireInputMonitoring(message: string) {
+  if (!isMacosPlatform()) return;
+
   if (
     /input monitoring|keyboard event tap|listen for global shortcuts?|listen for the global shortcut/i.test(
       message,
@@ -846,6 +998,46 @@ function setupStepMeta(step: SetupStep) {
   return SETUP_STEPS[setupStepIndex(step)] || SETUP_STEPS[0];
 }
 
+function setupPermissionIntro(settings: AppSettings) {
+  const showInputMonitoring = inputMonitoringShownInOnboarding(settings);
+
+  if (isWindowsPlatform()) {
+    return "Microphone records dictation. Shortcuts and paste do not need an extra Windows permission. Paste can fail into elevated/admin apps.";
+  }
+
+  if (showInputMonitoring) {
+    return "Microphone records dictation. Accessibility lets Parrot Core consume the shortcut and paste text. This Mac also needs Input Monitoring for shortcut listening.";
+  }
+
+  return "Microphone records dictation. Accessibility lets Parrot Core consume the shortcut and paste the finished text.";
+}
+
+function setupIncompleteRequirementsCopy(settings: AppSettings | null | undefined) {
+  if (isWindowsPlatform()) {
+    return "Complete Microphone and the required local models first";
+  }
+
+  return inputMonitoringShownInOnboarding(settings)
+    ? "Complete Microphone, Accessibility, Input Monitoring, and the required local models first"
+    : "Complete Microphone, Accessibility, and the required local models first";
+}
+
+function setupCompleteCopy() {
+  if (isWindowsPlatform()) {
+    return "Microphone access and required local models are ready. Click Finish setup to start Parrot.";
+  }
+
+  return "All required permissions and models are ready. Click Finish setup to start Parrot.";
+}
+
+function generalPermissionsIntro() {
+  if (isWindowsPlatform()) {
+    return "Parrot needs microphone access. Shortcuts and paste do not need extra Windows permissions.";
+  }
+
+  return "Parrot needs these no matter which language or local model you use.";
+}
+
 function syncSetupStepWithSnapshot(current: Snapshot) {
   if (!setupPermissionsComplete(current.permissions, current.settings)) {
     setupStep = "permissions";
@@ -889,16 +1081,13 @@ function renderSetupStepContent(current: Snapshot) {
     permissions,
     current.settings,
   );
-  const showInputMonitoring = inputMonitoringShownInOnboarding(
-    current.settings,
-  );
 
   if (setupStep === "permissions") {
     return `
       <section class="setup-section">
         <div class="section-heading">
           <h3>Permissions</h3>
-          <p>${showInputMonitoring ? "Microphone records dictation. Accessibility lets Parrot Core consume the shortcut and paste text. This Mac also needs Input Monitoring for shortcut listening." : "Microphone records dictation. Accessibility lets Parrot Core consume the shortcut and paste the finished text."}</p>
+          <p>${escapeHtml(setupPermissionIntro(current.settings))}</p>
         </div>
         <div class="permission-list">
           ${permissionRows.map((requirement) => renderPermissionRequirement(requirement, { variant: "setup" })).join("")}
@@ -946,7 +1135,7 @@ function renderSetupActions(current: Snapshot) {
   const finishDisabled =
     complete && !setupFinalizing
       ? ""
-      : `disabled aria-disabled="true" title="${inputMonitoringShownInOnboarding(current.settings) ? "Complete Microphone, Accessibility, Input Monitoring, and the required local models first" : "Complete Microphone, Accessibility, and the required local models first"}"`;
+      : `disabled aria-disabled="true" title="${escapeAttr(setupIncompleteRequirementsCopy(current.settings))}"`;
   const finishLabel = setupFinalizing ? "Preparing models..." : "Finish setup";
 
   return `
@@ -981,7 +1170,7 @@ function renderSetupGate(current: Snapshot) {
           <p>
             ${
               showCompleteCopy
-                ? "All required permissions and models are ready. Click Finish setup to start Parrot."
+                ? escapeHtml(setupCompleteCopy())
                 : escapeHtml(meta.description)
             }
           </p>
@@ -1249,7 +1438,7 @@ function renderLocalModelsSection(
     <section class="${context === "setup" ? "setup-section" : "settings-section"}">
       <div class="section-heading">
         <h3>Local models</h3>
-        <p>These models run on your Mac. Downloaded models stay on disk until you delete them.</p>
+        <p>These models run locally on ${escapeHtml(localDeviceLabel())}. Downloaded models stay on disk until you delete them.</p>
       </div>
       ${context === "general" ? renderSettingsNotice("models") : ""}
 
@@ -1372,6 +1561,10 @@ function renderCleanupModelChooser(
 }
 
 function renderRecording(settings: AppSettings, devices: AudioDevice[]) {
+  const pasteHint = isWindowsPlatform()
+    ? "Off by default: Parrot pastes into whichever text box is focused when transcription finishes. Turn this on to make Parrot return to the original app/window. Windows can block paste into elevated/admin apps."
+    : "Off by default: Parrot pastes into whichever text box is focused when transcription finishes. Turn this on to make Parrot return to the original app/window.";
+
   return `
     <header><h2>Recording</h2><p>Choose a microphone and shortcuts.</p></header>
     <div class="card">
@@ -1403,20 +1596,23 @@ function renderRecording(settings: AppSettings, devices: AudioDevice[]) {
         <input id="pasteIntoRecordingStartWindow" type="checkbox" ${settings.pasteIntoRecordingStartWindow ? "checked" : ""}/>
         Paste into the app/window where recording started
       </label>
-      <p class="hint">Off by default: Parrot pastes into whichever text box is focused when transcription finishes. Turn this on to make Parrot return to the original app/window.</p>
+      <p class="hint">${escapeHtml(pasteHint)}</p>
     </div>
   `;
 }
 
 function renderShortcutSettings(settings: AppSettings) {
   const resetDisabled = shortcutCaptureTarget ? "disabled" : "";
+  const shortcutHelp = isWindowsPlatform()
+    ? "Hold shortcuts can use a single modifier. Toggle shortcuts need a chord or function key."
+    : "Use a hold shortcut for quick phrases, or a toggle shortcut for longer dictation.";
 
   return `
     <div class="card shortcuts-card">
       <div class="shortcut-card-title">
         <div>
           <h3>Shortcuts</h3>
-          <p>Use a hold shortcut for quick phrases, or a toggle shortcut for longer dictation.</p>
+          <p>${escapeHtml(shortcutHelp)}</p>
         </div>
       </div>
 
@@ -1591,6 +1787,10 @@ function renderShortcutSettingRow(
 
 function shortcutCaptureInlineHelp(target: ShortcutSettingKey) {
   if (target === "pushToTalkShortcut") {
+    if (isWindowsPlatform()) {
+      return "Press a single modifier, a modifier plus another key, or a function key. Press Escape to cancel.";
+    }
+
     return "Press Fn, a single modifier, a modifier plus another key, or a function key. Press Escape to cancel.";
   }
 
@@ -1602,6 +1802,10 @@ function shortcutCaptureStartMessage(target: ShortcutSettingKey) {
 }
 
 function shortcutDisplayName(shortcut: ShortcutSettings) {
+  if (isWindowsPlatform() && shortcut.displayName) {
+    return shortcut.displayName;
+  }
+
   const chord = shortcut.chord;
   if (!chord) return shortcut.displayName;
 
@@ -1614,15 +1818,25 @@ function shortcutDisplayName(shortcut: ShortcutSettings) {
 }
 
 function shortcutModifierLabel(modifier: string) {
-  const labels: Record<string, string> = {
-    command: "Command",
-    control: "Control",
-    option: "Option",
-    alt: "Alt",
-    shift: "Shift",
-    fn: "Fn",
-    meta: "Meta",
-  };
+  const labels: Record<string, string> = isWindowsPlatform()
+    ? {
+        command: "Win",
+        control: "Ctrl",
+        option: "Alt",
+        alt: "Alt",
+        shift: "Shift",
+        fn: "Fn",
+        meta: "Win",
+      }
+    : {
+        command: "Command",
+        control: "Control",
+        option: "Option",
+        alt: "Alt",
+        shift: "Shift",
+        fn: "Fn",
+        meta: "Meta",
+      };
   return labels[modifier] ?? modifier;
 }
 
@@ -1630,7 +1844,7 @@ function shortcutKeyLabel(key: ShortcutKey) {
   if (typeof key === "string") {
     const labels: Record<string, string> = {
       space: "Space",
-      return: "Return",
+      return: isWindowsPlatform() ? "Enter" : "Return",
       tab: "Tab",
       escape: "Escape",
       arrowLeft: "Left Arrow",
@@ -1887,7 +2101,7 @@ function renderAbout() {
       <article class="about-card">
         <div class="about-card-icon">${icon("shield")}</div>
         <h3>Privacy</h3>
-        <p>Parrot is local-first. Audio, transcripts, cleanup, settings, and dictionary entries stay on your Mac during normal use.</p>
+        <p>Parrot is local-first. Audio, transcripts, cleanup, settings, and dictionary entries stay on ${escapeHtml(localDeviceLabel())} during normal use.</p>
         <div class="about-card-actions">
           ${renderExternalLinkButton("Read privacy notice", PRIVACY_URL)}
         </div>
@@ -1966,7 +2180,7 @@ function renderGeneral(
     <section class="settings-section">
       <div class="section-heading">
         <h3>Permissions</h3>
-        <p>Parrot needs these no matter which language or local model you use.</p>
+        <p>${escapeHtml(generalPermissionsIntro())}</p>
       </div>
       ${renderSettingsNotice("permissions")}
       <div class="permission-list embedded">
@@ -2339,10 +2553,7 @@ function bindSetupEvents() {
         acceptPermissionSnapshot(permissions);
 
         if (!snapshot || !setupRequirementsComplete(snapshot)) {
-          toast =
-            inputMonitoringShownInOnboarding(snapshot?.settings)
-              ? "Setup is not complete yet. Enable Microphone, Accessibility, and Input Monitoring, then download the required models first."
-              : "Setup is not complete yet. Enable Microphone and Accessibility, then download the required models first.";
+          toast = `Setup is not complete yet. ${setupIncompleteRequirementsCopy(snapshot?.settings)}.`;
           render();
           return;
         }
@@ -2751,42 +2962,23 @@ function bindEvents() {
       };
     });
 
-    const resetShortcuts =
-      document.querySelector<HTMLButtonElement>("#resetShortcuts");
-    if (resetShortcuts)
-      resetShortcuts.onclick = async () => {
-        const shouldRestart =
-          shortcutMonitorPausedForCapture &&
-          snapshot !== null &&
-          permissionsAllGranted(snapshot.permissions);
-        shortcutCaptureSession += 1;
-        shortcutCaptureTarget = null;
-        shortcutMonitorPausedForCapture = false;
+  const resetShortcuts =
+    document.querySelector<HTMLButtonElement>("#resetShortcuts");
+  if (resetShortcuts)
+    resetShortcuts.onclick = async () => {
+      const shouldRestart =
+        shortcutMonitorPausedForCapture &&
+        snapshot !== null &&
+        permissionsAllGranted(snapshot.permissions);
+      shortcutCaptureSession += 1;
+      shortcutCaptureTarget = null;
+      shortcutMonitorPausedForCapture = false;
       shortcutNotice = {
         level: "success",
         message: "Shortcuts reset to defaults.",
       };
       try {
-        await saveSettings({
-          pushToTalkShortcut: {
-            ...DEFAULT_PUSH_TO_TALK_SHORTCUT,
-            platformCodes: {
-              ...DEFAULT_PUSH_TO_TALK_SHORTCUT.platformCodes,
-              macosKeyCodes: [
-                ...shortcutMacosKeyCodes(DEFAULT_PUSH_TO_TALK_SHORTCUT),
-              ],
-            },
-          },
-          handsFreeShortcut: {
-            ...DEFAULT_HANDS_FREE_SHORTCUT,
-            platformCodes: {
-              ...DEFAULT_HANDS_FREE_SHORTCUT.platformCodes,
-              macosKeyCodes: [
-                ...shortcutMacosKeyCodes(DEFAULT_HANDS_FREE_SHORTCUT),
-              ],
-            },
-          },
-        });
+        await saveSettings(defaultShortcutSettings());
       } catch (error) {
         shortcutNotice = {
           level: "error",
@@ -3000,13 +3192,25 @@ function shortcutsEquivalent(a: ShortcutSettings, b: ShortcutSettings) {
 }
 
 function shortcutCodeKey(shortcut: ShortcutSettings) {
-  return [...new Set(shortcutMacosKeyCodes(shortcut))]
-    .sort((left, right) => left - right)
-    .join(",");
+  const codes = shortcutPlatformCodes(shortcut);
+  if (codes.length > 0) {
+    return [...new Set(codes)].sort((left, right) => left - right).join(",");
+  }
+
+  return `chord:${JSON.stringify(shortcut.chord ?? shortcut.displayName)}`;
 }
 
 function shortcutMacosKeyCodes(shortcut: ShortcutSettings) {
   return shortcut.platformCodes?.macosKeyCodes ?? shortcut.macosKeyCodes ?? [];
+}
+
+function shortcutWindowsVirtualKeys(shortcut: ShortcutSettings) {
+  return shortcut.platformCodes?.windowsVirtualKeys ?? [];
+}
+
+function shortcutPlatformCodes(shortcut: ShortcutSettings) {
+  if (isWindowsPlatform()) return shortcutWindowsVirtualKeys(shortcut);
+  return shortcutMacosKeyCodes(shortcut);
 }
 
 function dictionaryEntryFromInput(term: string): DictionaryEntry | null {

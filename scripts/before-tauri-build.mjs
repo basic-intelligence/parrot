@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
 
 const isMac = process.platform === "darwin";
+const isWindows = process.platform === "win32";
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
 function run(command, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: "inherit" });
+    const child = spawn(command, args, { stdio: "inherit", shell: process.platform === "win32" });
     child.on("error", reject);
     child.on("exit", (code, signal) => {
       if (code === 0) {
@@ -23,6 +24,8 @@ if (isMac) {
     "src-tauri/assets/dmg-background.png",
   ]);
   await run(npmCommand, ["run", "build:core:mac"]);
+} else if (isWindows) {
+  await run(npmCommand, ["run", "build:core:windows"]);
 }
 
 await run(npmCommand, ["run", "build:ui"]);

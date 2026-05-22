@@ -7,22 +7,26 @@
 
 Press a shortcut. Say what you want. Parrot turns your voice into clean text and pastes it.
 
-[![Get Parrot for macOS](https://img.shields.io/badge/Download_Parrot-macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/basic-intelligence/parrot/releases/latest)
+[![Download Parrot for macOS](https://img.shields.io/badge/Download_Parrot_for-macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/basic-intelligence/parrot/releases/latest)
+
+[![Download Parrot for Windows](https://img.shields.io/badge/Download_Parrot_for-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/basic-intelligence/parrot/releases/latest)
 
 </div>
 
 ---
 
+## What is Parrot?
+
+Parrot is a local-first dictation app for macOS and Windows. It records your voice, transcribes it locally, cleans up the text, and pastes it into the app you were using.
+
 ## Why Parrot?
 
-- **100% Free** — No trial gate, paid tier, weekly allowance, or surprise upgrade path.
-- **100% Private** — Everything (audio, transcripts, dictionary, etc) stays on your machine.
-- **No word limits** — Dictate as much as you want, whenever you want, without caps.
-- **No subscription** — No monthly plan, Pro upgrade, or lifetime upsell.
-- **100+ languages** — Auto-detect language or choose a specific language or locale.
-- **Smart cleanup** — Adds punctuation, capitalization, spacing, and light corrections.
-- **Personal dictionary** — Save names, acronyms, product terms, and project phrases for better recognition.
-- **Open source** — Inspect, build, fork, package, or contribute to the code.
+- **Free and open source**
+- **Local-first and private**
+- **No subscriptions or word limits**
+- **Works across 100+ languages**
+- **Smart cleanup and punctuation**
+- **Personal dictionary for names, acronyms, and project terms**
 
 ## Comparison
 
@@ -39,15 +43,19 @@ Press a shortcut. Say what you want. Parrot turns your voice into clean text and
 Parrot uses:
 
 - **WhisperKit** and **whisper.cpp** for speech-to-text.
-- **llama.cpp** with small GGUF models for cleanup and formatting.
-- **Tauri** for the desktop app shell.
+- **llama.cpp** with local GGUF models for cleanup and formatting.
+- **Tauri**, **Rust**, **Swift**, and **TypeScript** for the desktop app.
 
 ## Roadmap 🗺️
 
 - [x] macOS
-- [ ] Windows
+- [x] Windows
 - [ ] Linux
 
-## License
+## Links
 
-MIT. See [LICENSE](LICENSE), [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), and [PRIVACY.md](PRIVACY.md).
+- [Privacy Notice](PRIVACY.md)
+- [Contributing](CONTRIBUTING.md)
+- [Native Core](native-core/README.md)
+- [License](LICENSE)
+- [Third-party licenses](THIRD_PARTY_LICENSES.md)

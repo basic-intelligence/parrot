@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-unsupported",
-  "description": "Main settings window capability for unsupported Windows/Linux foundation builds.",
-  "platforms": ["windows", "linux"],
+  "description": "Main settings window capability for unsupported Linux foundation builds.",
+  "platforms": ["linux"],
   "windows": ["main"],
   "permissions": [
     "core:event:allow-listen",

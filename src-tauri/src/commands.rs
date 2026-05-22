@@ -122,9 +122,28 @@ fn model_cache_dir(app_data_dir: &std::path::Path) -> PathBuf {
         .unwrap_or_else(|| app_data_dir.to_path_buf())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn model_cache_dir(app_data_dir: &std::path::Path) -> PathBuf {
+    windows_model_cache_dir(
+        app_data_dir,
+        std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
+    )
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 fn model_cache_dir(app_data_dir: &std::path::Path) -> PathBuf {
     app_data_dir.to_path_buf()
+}
+
+#[allow(dead_code)]
+fn windows_model_cache_dir(
+    app_data_dir: &std::path::Path,
+    local_app_data: Option<PathBuf>,
+) -> PathBuf {
+    local_app_data
+        .filter(|path| !path.as_os_str().is_empty())
+        .map(|path| path.join("Parrot").join("Models"))
+        .unwrap_or_else(|| app_data_dir.join("Models"))
 }
 
 fn shared_resources_dir(resources_dir: &std::path::Path) -> PathBuf {
@@ -196,17 +215,19 @@ pub fn permission_value_all_granted(value: &serde_json::Value) -> bool {
 }
 
 async fn initialize_core_from_state(state: &State<'_, AppState>) -> anyhow::Result<()> {
-    let settings = state.settings.lock().await.settings.clone();
-    initialize_core(state.inner().core.app(), &state.core, settings).await
+    let runtime = state.runtime().await?;
+    let settings = runtime.settings.lock().await.settings.clone();
+    initialize_core(runtime.core.app(), &runtime.core, settings).await
 }
 
 async fn restart_hotkey_monitor_if_ready(state: &State<'_, AppState>) -> anyhow::Result<()> {
-    let permissions = state
+    let runtime = state.runtime().await?;
+    let permissions = runtime
         .core
         .request(NativeCoreMethod::PermissionStatuses, json!({}))
         .await?;
     if permission_value_all_granted(&permissions) {
-        let value = state
+        let value = runtime
             .core
             .request(NativeCoreMethod::StartHotkeyMonitor, json!({}))
             .await?;
@@ -225,15 +246,16 @@ async fn core_request_recovering(
     method: NativeCoreMethod,
     payload: serde_json::Value,
 ) -> anyhow::Result<serde_json::Value> {
-    match state.core.request(method, payload.clone()).await {
+    let runtime = state.runtime().await?;
+    match runtime.core.request(method, payload.clone()).await {
         Ok(value) => Ok(value),
         Err(error) if is_native_core_disconnect(&error) => {
-            state.core.reconnect().await?;
+            runtime.core.reconnect().await?;
             initialize_core_from_state(state).await?;
             if let Err(error) = restart_hotkey_monitor_if_ready(state).await {
                 eprintln!("failed to restart hotkey monitor after native-core reconnect: {error}");
             }
-            state.core.request(method, payload).await
+            runtime.core.request(method, payload).await
         }
         Err(error) => Err(error),
     }
@@ -253,8 +275,9 @@ pub async fn save_settings(
     state: State<'_, AppState>,
     mut settings: AppSettings,
 ) -> Result<AppSnapshot, String> {
+    let runtime = state.runtime().await.map_err(|e| e.to_string())?;
     let saved_settings = {
-        let mut store = state.settings.lock().await;
+        let mut store = runtime.settings.lock().await;
         settings.launch_at_login = app
             .autolaunch()
             .is_enabled()
@@ -284,8 +307,9 @@ pub async fn set_launch_at_login(
         app.autolaunch().disable().map_err(|e| e.to_string())?;
     }
     let actual_enabled = app.autolaunch().is_enabled().map_err(|e| e.to_string())?;
+    let runtime = state.runtime().await.map_err(|e| e.to_string())?;
     let settings = {
-        let mut store = state.settings.lock().await;
+        let mut store = runtime.settings.lock().await;
         let mut settings = store.settings.clone();
         settings.launch_at_login = actual_enabled;
         store.save(settings.clone()).map_err(|e| e.to_string())?;
@@ -363,11 +387,13 @@ pub async fn start_test_dictation(state: State<'_, AppState>) -> Result<(), Stri
 
 #[tauri::command]
 pub async fn stop_test_dictation(state: State<'_, AppState>) -> Result<DictationResult, String> {
-    let value = state
-        .core
-        .request(NativeCoreMethod::StopRecording, json!({ "kind": "test" }))
-        .await
-        .map_err(|e| e.to_string())?;
+    let value = core_request_recovering(
+        &state,
+        NativeCoreMethod::StopRecording,
+        json!({ "kind": "test" }),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     let raw = value
         .get("raw")
         .and_then(|v| v.as_str())
@@ -383,7 +409,8 @@ pub async fn stop_test_dictation(state: State<'_, AppState>) -> Result<Dictation
         .and_then(|v| v.as_f64())
         .unwrap_or_default();
 
-    let settings = state.settings.lock().await.settings.clone();
+    let runtime = state.runtime().await.map_err(|e| e.to_string())?;
+    let settings = runtime.settings.lock().await.settings.clone();
     if settings.history_enabled {
         insert_history(&state, raw.clone(), cleaned.clone(), duration).await?;
     }
@@ -500,7 +527,8 @@ pub async fn save_recording_result(
     state: State<'_, AppState>,
     result: RecordingResultPayload,
 ) -> Result<AppSnapshot, String> {
-    let settings = state.settings.lock().await.settings.clone();
+    let runtime = state.runtime().await.map_err(|e| e.to_string())?;
+    let settings = runtime.settings.lock().await.settings.clone();
     if settings.history_enabled {
         insert_history(
             &state,
@@ -519,7 +547,8 @@ pub async fn delete_history_item(
     state: State<'_, AppState>,
     id: Uuid,
 ) -> Result<AppSnapshot, String> {
-    state
+    let runtime = state.runtime().await.map_err(|e| e.to_string())?;
+    runtime
         .history
         .lock()
         .await
@@ -533,7 +562,8 @@ pub async fn clear_history(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<AppSnapshot, String> {
-    state
+    let runtime = state.runtime().await.map_err(|e| e.to_string())?;
+    runtime
         .history
         .lock()
         .await
@@ -548,7 +578,8 @@ async fn insert_history(
     cleaned: String,
     duration: f64,
 ) -> Result<(), String> {
-    let mut history = state.history.lock().await;
+    let runtime = state.runtime().await.map_err(|e| e.to_string())?;
+    let mut history = runtime.history.lock().await;
     history
         .insert(HistoryEntry {
             id: Uuid::new_v4(),
@@ -561,7 +592,8 @@ async fn insert_history(
 }
 
 async fn snapshot(app: &AppHandle, state: &State<'_, AppState>) -> anyhow::Result<AppSnapshot> {
-    let mut settings = state.settings.lock().await.settings.clone();
+    let runtime = state.runtime().await?;
+    let mut settings = runtime.settings.lock().await.settings.clone();
     settings.launch_at_login = app
         .autolaunch()
         .is_enabled()
@@ -581,7 +613,7 @@ async fn snapshot(app: &AppHandle, state: &State<'_, AppState>) -> anyhow::Resul
         };
     let models: Vec<ModelStatus> = serde_json::from_value(models_value).unwrap_or_default();
     let permissions = permission_snapshot(state).await?;
-    let history = state.history.lock().await.entries();
+    let history = runtime.history.lock().await.entries();
     Ok(AppSnapshot {
         settings,
         devices,
@@ -667,6 +699,37 @@ mod tests {
     }
 
     #[test]
+    fn permission_readiness_for_windows_requires_only_required_requirements() {
+        let value = serde_json::json!({
+            "requirements": [
+                {
+                    "kind": "microphone",
+                    "title": "Microphone",
+                    "description": "Record your voice locally for dictation.",
+                    "state": "granted",
+                    "required": true,
+                    "requestable": true,
+                    "opensSettings": true
+                }
+            ],
+            "allRequiredGranted": true,
+            "microphone": "granted",
+            "accessibility": null,
+            "inputMonitoring": null,
+            "allGranted": true
+        });
+
+        let mut permissions: PermissionSnapshot = serde_json::from_value(value.clone()).unwrap();
+        permissions.ensure_macos_compat_requirements();
+        let output = serde_json::to_value(permissions).unwrap();
+
+        assert!(permission_value_all_granted(&value));
+        assert_eq!(output["requirements"].as_array().unwrap().len(), 1);
+        assert_eq!(output["requirements"][0]["kind"], "microphone");
+        assert_eq!(output["allRequiredGranted"], true);
+    }
+
+    #[test]
     fn native_core_paths_payload_uses_camel_case_keys() {
         let paths = NativeCorePaths {
             app_data_dir: "/tmp/parrot".into(),
@@ -695,8 +758,26 @@ mod tests {
         #[cfg(target_os = "macos")]
         assert!(model_cache_dir.ends_with("Library/Application Support/Parrot"));
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
         assert_eq!(model_cache_dir, app_data_dir);
+
+        #[cfg(target_os = "windows")]
+        assert!(model_cache_dir.ends_with("Parrot/Models") || model_cache_dir.ends_with("Models"));
+    }
+
+    #[test]
+    fn windows_model_cache_dir_uses_non_roaming_local_app_data() {
+        let app_data_dir = std::path::Path::new("C:/Users/Alice/AppData/Roaming/in.basic.parrot");
+        let local_app_data = PathBuf::from("C:/Users/Alice/AppData/Local");
+
+        assert_eq!(
+            windows_model_cache_dir(app_data_dir, Some(local_app_data)),
+            PathBuf::from("C:/Users/Alice/AppData/Local/Parrot/Models")
+        );
+        assert_eq!(
+            windows_model_cache_dir(app_data_dir, None),
+            PathBuf::from("C:/Users/Alice/AppData/Roaming/in.basic.parrot/Models")
+        );
     }
 
     #[test]

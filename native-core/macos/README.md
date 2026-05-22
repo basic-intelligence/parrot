@@ -1,5 +1,37 @@
-# macOS Sidecar
+# Parrot Native Core for macOS
 
-This Swift package implements Parrot's current native sidecar for macOS. It owns audio capture, global hotkey monitoring, local WhisperKit and whisper.cpp transcription, local llama.cpp/Qwen cleanup, paste integration, and macOS permission checks.
+The macOS native core is a Swift sidecar. The Tauri host starts it as the bundled Parrot Core helper and communicates over newline-delimited JSON.
 
-The sidecar protocol is newline-delimited JSON. In the bundled app, the Tauri host starts the helper app and passes a Unix domain socket path with `--socket`; direct stdin/stdout mode remains available for development. Keep this request/response boundary stable so future platform sidecars can implement the same behavior.
+The sidecar owns macOS-specific behavior: audio capture, input devices, permissions, global shortcuts, shortcut capture, focused text context, paste, sound playback, local speech-to-text, and local cleanup.
+
+## Architecture
+
+- `Sources/ParrotCore/` contains the main sidecar service and macOS platform adapters.
+- `Sources/ParrotWhisper/` contains the persistent whisper.cpp helper used by Intel/AMD speech models.
+- `Sources/WhisperCppBridge/` wraps whisper.cpp for Swift.
+- `Tests/ParrotCoreTests/` contains macOS sidecar tests.
+- `../shared/` contains shared model catalog, prompts, language data, sounds, and fixtures. Do not duplicate those values in macOS-only code.
+
+## Build
+
+From the repository root:
+
+```sh
+npm run build:core:mac
+```
+
+The full Tauri dev/build commands call this automatically on macOS.
+
+## Tests
+
+```sh
+swift test --package-path native-core/macos
+```
+
+## Platform notes
+
+- Apple Silicon speech models use WhisperKit.
+- Intel/AMD speech models use whisper.cpp.
+- Cleanup uses local llama.cpp/GGUF models.
+- macOS permissions are handled by the sidecar and surfaced through the Tauri app.
+- Keep the newline-delimited JSON protocol stable across platform sidecars.

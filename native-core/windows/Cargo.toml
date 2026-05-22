@@ -1,0 +1,46 @@
+[package]
+name = "parrot-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+
+[dependencies]
+anyhow = { workspace = true }
+cpal = "0.15"
+llama_cpp = { version = "0.3.2", default-features = false, features = ["compat"] }
+parrot-cleanup = { path = "../../crates/parrot-cleanup" }
+parrot-language = { path = "../../crates/parrot-language" }
+parrot-models = { path = "../../crates/parrot-models" }
+parrot-paste = { path = "../../crates/parrot-paste" }
+parrot-prompts = { path = "../../crates/parrot-prompts" }
+parrot-protocol = { path = "../../crates/parrot-protocol" }
+parrot-settings = { path = "../../crates/parrot-settings" }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+whisper-rs = { version = "0.16.0", default-features = false }
+
+[features]
+default = []
+cuda = ["whisper-rs/cuda"]
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Media_Audio",
+  "Win32_System_DataExchange",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
+  "Win32_System_Threading",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }
+windows = { version = "0.54", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_UI_Accessibility",
+] }
+
+[dev-dependencies]
+tempfile = "3"

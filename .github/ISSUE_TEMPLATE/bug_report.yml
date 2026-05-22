@@ -35,8 +35,8 @@ body:
     id: system
     attributes:
       label: System
-      description: Optional. Include macOS version, Apple Silicon/Intel, and install source if relevant.
-      placeholder: "macOS 15.5, Apple Silicon, GitHub Release DMG"
+      description: Optional. Include OS version, CPU architecture, GPU if relevant, and install source.
+      placeholder: "macOS 15 Apple Silicon DMG, or Windows 11 x64 GitHub Release installer"
     validations:
       required: false
 

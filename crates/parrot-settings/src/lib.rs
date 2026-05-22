@@ -1,15 +1,39 @@
 use parrot_language::canonical_language_code;
 pub use parrot_protocol::{
-    default_hands_free_shortcut, default_push_to_talk_shortcut, AppSettings, DictationLanguageMode,
-    DictionaryEntry, ShortcutMode, ShortcutSettings, DEFAULT_CLEANUP_MODEL_ID,
+    default_hands_free_shortcut, default_push_to_talk_shortcut,
+    default_windows_hands_free_shortcut, default_windows_push_to_talk_shortcut, AppSettings,
+    DictationLanguageMode, DictionaryEntry, ShortcutChord, ShortcutKey, ShortcutMode,
+    ShortcutModifier, ShortcutPlatformCodes, ShortcutSettings, DEFAULT_CLEANUP_MODEL_ID,
     GEMMA_CLEANUP_MODEL_ID,
 };
 use std::collections::HashSet;
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsPlatform {
+    Macos,
+    Windows,
+}
+
+const OLD_WINDOWS_HANDS_FREE_DEFAULT_KEYS: &[u16] = &[17, 18, 32];
+const INTERMEDIATE_WINDOWS_HANDS_FREE_DEFAULT_KEYS: &[u16] = &[162, 164, 32];
+
 pub fn normalize_settings(settings: &mut AppSettings) -> bool {
+    normalize_settings_for_platform(settings, SettingsPlatform::Macos)
+}
+
+pub fn default_settings_for_platform(platform: SettingsPlatform) -> AppSettings {
+    let mut settings = AppSettings::default();
+    normalize_settings_for_platform(&mut settings, platform);
+    settings
+}
+
+pub fn normalize_settings_for_platform(
+    settings: &mut AppSettings,
+    platform: SettingsPlatform,
+) -> bool {
     let mut migrated = false;
-    migrated |= normalize_shortcuts(settings);
+    migrated |= normalize_shortcuts_for_platform(settings, platform);
     migrated |= normalize_dictionary_entries(settings);
     migrated |= normalize_dictation_language(settings);
     migrated |= normalize_cleanup_model_id(settings);
@@ -99,26 +123,71 @@ pub fn normalize_dictionary_term(value: &str) -> String {
 }
 
 pub fn normalize_shortcuts(settings: &mut AppSettings) -> bool {
+    normalize_shortcuts_for_platform(settings, SettingsPlatform::Macos)
+}
+
+pub fn normalize_shortcuts_for_platform(
+    settings: &mut AppSettings,
+    platform: SettingsPlatform,
+) -> bool {
     let original_push_to_talk = settings.push_to_talk_shortcut.clone();
     let original_hands_free = settings.hands_free_shortcut.clone();
 
-    if settings.push_to_talk_shortcut.macos_key_codes().is_empty()
-        || settings
-            .push_to_talk_shortcut
-            .display_name
-            .trim()
-            .is_empty()
-    {
-        settings.push_to_talk_shortcut = default_push_to_talk_shortcut();
-    }
-    if !matches!(settings.push_to_talk_shortcut.mode, ShortcutMode::Hold) {
-        settings.push_to_talk_shortcut.mode = ShortcutMode::Hold;
+    match platform {
+        SettingsPlatform::Macos => {
+            if settings.push_to_talk_shortcut.macos_key_codes().is_empty()
+                || settings
+                    .push_to_talk_shortcut
+                    .display_name
+                    .trim()
+                    .is_empty()
+            {
+                settings.push_to_talk_shortcut = default_push_to_talk_shortcut();
+            }
+
+            if settings.hands_free_shortcut.macos_key_codes().is_empty()
+                || settings.hands_free_shortcut.display_name.trim().is_empty()
+            {
+                settings.hands_free_shortcut = default_hands_free_shortcut();
+            }
+        }
+        SettingsPlatform::Windows => {
+            if settings
+                .push_to_talk_shortcut
+                .windows_virtual_keys()
+                .is_empty()
+                || settings
+                    .push_to_talk_shortcut
+                    .display_name
+                    .trim()
+                    .is_empty()
+            {
+                settings.push_to_talk_shortcut = windows_shortcut_or_default(
+                    &settings.push_to_talk_shortcut,
+                    default_windows_push_to_talk_shortcut(),
+                );
+            }
+
+            if settings
+                .hands_free_shortcut
+                .windows_virtual_keys()
+                .is_empty()
+                || settings.hands_free_shortcut.display_name.trim().is_empty()
+            {
+                settings.hands_free_shortcut = windows_shortcut_or_default(
+                    &settings.hands_free_shortcut,
+                    default_windows_hands_free_shortcut(),
+                );
+            }
+
+            if is_windows_hands_free_default_to_migrate(&settings.hands_free_shortcut) {
+                settings.hands_free_shortcut = default_windows_hands_free_shortcut();
+            }
+        }
     }
 
-    if settings.hands_free_shortcut.macos_key_codes().is_empty()
-        || settings.hands_free_shortcut.display_name.trim().is_empty()
-    {
-        settings.hands_free_shortcut = default_hands_free_shortcut();
+    if !matches!(settings.push_to_talk_shortcut.mode, ShortcutMode::Hold) {
+        settings.push_to_talk_shortcut.mode = ShortcutMode::Hold;
     }
     if !matches!(settings.hands_free_shortcut.mode, ShortcutMode::Toggle) {
         settings.hands_free_shortcut.mode = ShortcutMode::Toggle;
@@ -126,6 +195,158 @@ pub fn normalize_shortcuts(settings: &mut AppSettings) -> bool {
 
     original_push_to_talk != settings.push_to_talk_shortcut
         || original_hands_free != settings.hands_free_shortcut
+}
+
+fn windows_shortcut_or_default(
+    shortcut: &ShortcutSettings,
+    fallback: ShortcutSettings,
+) -> ShortcutSettings {
+    if is_macos_default_shortcut(shortcut) {
+        return fallback;
+    }
+
+    let Some(keys) = windows_virtual_keys_from_chord(shortcut.chord.as_ref(), &shortcut.mode)
+    else {
+        return fallback;
+    };
+
+    let mut shortcut = shortcut.clone();
+    if shortcut.display_name.trim().is_empty() {
+        shortcut.display_name = display_name_for_windows_keys(&keys);
+    }
+    shortcut.platform_codes = ShortcutPlatformCodes {
+        macos_key_codes: None,
+        windows_virtual_keys: Some(keys),
+        linux_key_codes: None,
+    };
+    shortcut
+}
+
+fn is_macos_default_shortcut(shortcut: &ShortcutSettings) -> bool {
+    shortcut.macos_key_codes() == [63]
+        || shortcut.macos_key_codes() == [59, 49]
+        || shortcut.display_name == "Fn"
+        || shortcut.display_name == "Control + Space"
+}
+
+fn is_windows_hands_free_default_to_migrate(shortcut: &ShortcutSettings) -> bool {
+    let keys = shortcut.windows_virtual_keys();
+
+    let matches_known_default = (shortcut.display_name == "Ctrl + Alt + Space"
+        && keys == OLD_WINDOWS_HANDS_FREE_DEFAULT_KEYS)
+        || (shortcut.display_name == "Left Ctrl + Left Alt + Space"
+            && keys == INTERMEDIATE_WINDOWS_HANDS_FREE_DEFAULT_KEYS);
+
+    matches_known_default
+        && shortcut.mode == ShortcutMode::Toggle
+        && shortcut.enabled
+        && !shortcut.double_tap_toggle
+        && shortcut.macos_key_codes().is_empty()
+        && shortcut
+            .platform_codes
+            .linux_key_codes
+            .as_deref()
+            .unwrap_or_default()
+            .is_empty()
+}
+
+fn windows_virtual_keys_from_chord(
+    chord: Option<&ShortcutChord>,
+    mode: &ShortcutMode,
+) -> Option<Vec<u16>> {
+    let chord = chord?;
+    let mut keys = Vec::new();
+    for modifier in &chord.modifiers {
+        match modifier {
+            ShortcutModifier::Control => keys.push(17),
+            ShortcutModifier::Alt | ShortcutModifier::Option => keys.push(18),
+            ShortcutModifier::Shift => keys.push(16),
+            ShortcutModifier::Meta | ShortcutModifier::Command => keys.push(91),
+            ShortcutModifier::Fn => return None,
+        }
+    }
+
+    if let Some(key) = &chord.key {
+        keys.push(windows_virtual_key_for_key(key)?);
+    } else if matches!(mode, ShortcutMode::Hold)
+        && chord.modifiers.as_slice() == [ShortcutModifier::Control]
+    {
+        keys = vec![163];
+    } else {
+        return None;
+    }
+
+    keys.sort_by_key(|key| windows_key_sort_key(*key));
+    keys.dedup();
+    Some(keys)
+}
+
+fn windows_virtual_key_for_key(key: &ShortcutKey) -> Option<u16> {
+    match key {
+        ShortcutKey::Space => Some(32),
+        ShortcutKey::Return => Some(13),
+        ShortcutKey::Tab => Some(9),
+        ShortcutKey::Escape => None,
+        ShortcutKey::Character(value) => value
+            .chars()
+            .next()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .map(|character| character.to_ascii_uppercase() as u16),
+        ShortcutKey::Function(number) if (1..=24).contains(number) => {
+            Some(0x70 + u16::from(*number) - 1)
+        }
+        ShortcutKey::Function(_) => None,
+        ShortcutKey::ArrowLeft => Some(37),
+        ShortcutKey::ArrowRight => Some(39),
+        ShortcutKey::ArrowUp => Some(38),
+        ShortcutKey::ArrowDown => Some(40),
+        ShortcutKey::Delete => Some(46),
+    }
+}
+
+fn windows_key_sort_key(key: u16) -> (u8, u16) {
+    let rank = match key {
+        17 | 162 | 163 => 0,
+        18 | 164 | 165 => 1,
+        16 | 160 | 161 => 2,
+        91 | 92 => 3,
+        _ => 4,
+    };
+    (rank, key)
+}
+
+fn display_name_for_windows_keys(keys: &[u16]) -> String {
+    keys.iter()
+        .map(|key| match *key {
+            9 => "Tab".to_string(),
+            13 => "Enter".to_string(),
+            16 => "Shift".to_string(),
+            17 => "Ctrl".to_string(),
+            18 => "Alt".to_string(),
+            32 => "Space".to_string(),
+            160 => "Left Shift".to_string(),
+            161 => "Right Shift".to_string(),
+            162 => "Left Ctrl".to_string(),
+            163 => "Right Ctrl".to_string(),
+            164 => "Left Alt".to_string(),
+            165 => "Right Alt".to_string(),
+            37 => "Left Arrow".to_string(),
+            38 => "Up Arrow".to_string(),
+            39 => "Right Arrow".to_string(),
+            40 => "Down Arrow".to_string(),
+            46 => "Delete".to_string(),
+            91 => "Windows".to_string(),
+            92 => "Right Windows".to_string(),
+            key if (0x70..=0x87).contains(&key) => format!("F{}", key - 0x70 + 1),
+            key if (b'0' as u16..=b'9' as u16).contains(&key)
+                || (b'A' as u16..=b'Z' as u16).contains(&key) =>
+            {
+                char::from_u32(u32::from(key)).unwrap_or('?').to_string()
+            }
+            key => format!("VK {key}"),
+        })
+        .collect::<Vec<_>>()
+        .join(" + ")
 }
 
 #[cfg(test)]
@@ -194,6 +415,230 @@ mod tests {
                 modifiers: vec![ShortcutModifier::Fn],
                 key: None
             })
+        );
+    }
+
+    #[test]
+    fn normalizes_old_macos_shortcuts_to_windows_defaults() {
+        let mut settings = AppSettings {
+            push_to_talk_shortcut: serde_json::from_value(serde_json::json!({
+                "displayName": "Fn",
+                "macosKeyCodes": [63],
+                "mode": "hold"
+            }))
+            .unwrap(),
+            hands_free_shortcut: serde_json::from_value(serde_json::json!({
+                "displayName": "Control + Space",
+                "macosKeyCodes": [59, 49],
+                "mode": "toggle"
+            }))
+            .unwrap(),
+            ..AppSettings::default()
+        };
+
+        assert!(normalize_shortcuts_for_platform(
+            &mut settings,
+            SettingsPlatform::Windows
+        ));
+
+        assert_eq!(settings.push_to_talk_shortcut.display_name, "Right Ctrl");
+        assert_eq!(
+            settings.push_to_talk_shortcut.windows_virtual_keys(),
+            &[163]
+        );
+        assert!(settings.push_to_talk_shortcut.macos_key_codes().is_empty());
+        assert!(matches!(
+            settings.push_to_talk_shortcut.mode,
+            ShortcutMode::Hold
+        ));
+
+        assert_eq!(
+            settings.hands_free_shortcut.display_name,
+            "Left Ctrl + Space"
+        );
+        assert_eq!(
+            settings.hands_free_shortcut.windows_virtual_keys(),
+            &[162, 32]
+        );
+        assert!(settings.hands_free_shortcut.macos_key_codes().is_empty());
+        assert!(matches!(
+            settings.hands_free_shortcut.mode,
+            ShortcutMode::Toggle
+        ));
+    }
+
+    #[test]
+    fn migrates_old_windows_hands_free_default_to_left_control_space() {
+        let mut settings = default_settings_for_platform(SettingsPlatform::Windows);
+        settings.hands_free_shortcut = ShortcutSettings {
+            display_name: "Ctrl + Alt + Space".into(),
+            mode: ShortcutMode::Toggle,
+            enabled: true,
+            double_tap_toggle: false,
+            chord: Some(ShortcutChord {
+                modifiers: vec![ShortcutModifier::Control, ShortcutModifier::Alt],
+                key: Some(ShortcutKey::Space),
+            }),
+            platform_codes: ShortcutPlatformCodes {
+                macos_key_codes: None,
+                windows_virtual_keys: Some(vec![17, 18, 32]),
+                linux_key_codes: None,
+            },
+        };
+
+        assert!(normalize_shortcuts_for_platform(
+            &mut settings,
+            SettingsPlatform::Windows
+        ));
+
+        assert_eq!(
+            settings.hands_free_shortcut.display_name,
+            "Left Ctrl + Space"
+        );
+        assert_eq!(
+            settings.hands_free_shortcut.windows_virtual_keys(),
+            &[162, 32]
+        );
+    }
+
+    #[test]
+    fn migrates_intermediate_windows_hands_free_default_to_left_control_space() {
+        let mut settings = default_settings_for_platform(SettingsPlatform::Windows);
+        settings.hands_free_shortcut = ShortcutSettings {
+            display_name: "Left Ctrl + Left Alt + Space".into(),
+            mode: ShortcutMode::Toggle,
+            enabled: true,
+            double_tap_toggle: false,
+            chord: Some(ShortcutChord {
+                modifiers: vec![ShortcutModifier::Control, ShortcutModifier::Alt],
+                key: Some(ShortcutKey::Space),
+            }),
+            platform_codes: ShortcutPlatformCodes {
+                macos_key_codes: None,
+                windows_virtual_keys: Some(vec![162, 164, 32]),
+                linux_key_codes: None,
+            },
+        };
+
+        assert!(normalize_shortcuts_for_platform(
+            &mut settings,
+            SettingsPlatform::Windows
+        ));
+
+        assert_eq!(
+            settings.hands_free_shortcut.display_name,
+            "Left Ctrl + Space"
+        );
+        assert_eq!(
+            settings.hands_free_shortcut.windows_virtual_keys(),
+            &[162, 32]
+        );
+    }
+
+    #[test]
+    fn preserves_custom_windows_hands_free_shortcut_with_generic_modifiers() {
+        let mut settings = default_settings_for_platform(SettingsPlatform::Windows);
+        settings.hands_free_shortcut.display_name = "Custom Ctrl + Alt + Space".into();
+        settings
+            .hands_free_shortcut
+            .platform_codes
+            .windows_virtual_keys = Some(vec![17, 18, 32]);
+
+        assert!(!normalize_shortcuts_for_platform(
+            &mut settings,
+            SettingsPlatform::Windows
+        ));
+        assert_eq!(
+            settings.hands_free_shortcut.display_name,
+            "Custom Ctrl + Alt + Space"
+        );
+        assert_eq!(
+            settings.hands_free_shortcut.windows_virtual_keys(),
+            &[17, 18, 32]
+        );
+        assert!(settings.hands_free_shortcut.macos_key_codes().is_empty());
+        assert!(matches!(
+            settings.hands_free_shortcut.mode,
+            ShortcutMode::Toggle
+        ));
+    }
+
+    #[test]
+    fn default_settings_for_platform_preserves_macos_and_sets_windows_defaults() {
+        let macos = default_settings_for_platform(SettingsPlatform::Macos);
+        assert_eq!(macos.push_to_talk_shortcut.display_name, "Fn");
+        assert_eq!(macos.push_to_talk_shortcut.macos_key_codes(), &[63]);
+        assert_eq!(macos.hands_free_shortcut.display_name, "Control + Space");
+        assert_eq!(macos.hands_free_shortcut.macos_key_codes(), &[59, 49]);
+
+        let windows = default_settings_for_platform(SettingsPlatform::Windows);
+        assert_eq!(windows.push_to_talk_shortcut.display_name, "Right Ctrl");
+        assert_eq!(windows.push_to_talk_shortcut.windows_virtual_keys(), &[163]);
+        assert_eq!(
+            windows.hands_free_shortcut.display_name,
+            "Left Ctrl + Space"
+        );
+        assert_eq!(
+            windows.hands_free_shortcut.windows_virtual_keys(),
+            &[162, 32]
+        );
+    }
+
+    #[test]
+    fn derives_safe_windows_virtual_keys_from_chord() {
+        let mut settings = AppSettings {
+            hands_free_shortcut: ShortcutSettings {
+                display_name: "Ctrl + Alt + K".into(),
+                mode: ShortcutMode::Toggle,
+                enabled: true,
+                double_tap_toggle: false,
+                chord: Some(ShortcutChord {
+                    modifiers: vec![ShortcutModifier::Control, ShortcutModifier::Alt],
+                    key: Some(ShortcutKey::Character("k".into())),
+                }),
+                platform_codes: Default::default(),
+            },
+            ..AppSettings::default()
+        };
+
+        assert!(normalize_shortcuts_for_platform(
+            &mut settings,
+            SettingsPlatform::Windows
+        ));
+
+        assert_eq!(
+            settings.hands_free_shortcut.windows_virtual_keys(),
+            &[17, 18, 75]
+        );
+        assert!(settings.hands_free_shortcut.macos_key_codes().is_empty());
+    }
+
+    #[test]
+    fn fn_chord_without_windows_codes_migrates_to_windows_default() {
+        let mut settings = AppSettings {
+            push_to_talk_shortcut: ShortcutSettings {
+                display_name: "Fn".into(),
+                mode: ShortcutMode::Hold,
+                enabled: true,
+                double_tap_toggle: false,
+                chord: Some(ShortcutChord {
+                    modifiers: vec![ShortcutModifier::Fn],
+                    key: None,
+                }),
+                platform_codes: Default::default(),
+            },
+            ..AppSettings::default()
+        };
+
+        assert!(normalize_shortcuts_for_platform(
+            &mut settings,
+            SettingsPlatform::Windows
+        ));
+
+        assert_eq!(settings.push_to_talk_shortcut.display_name, "Right Ctrl");
+        assert_eq!(
+            settings.push_to_talk_shortcut.windows_virtual_keys(),
+            &[163]
         );
     }
 

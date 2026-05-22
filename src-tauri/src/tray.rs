@@ -18,7 +18,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip("Parrot")
         .menu(&menu)
-        .icon_as_template(true)
+        .icon_as_template(cfg!(target_os = "macos"))
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "settings" => {
@@ -80,7 +80,7 @@ pub fn set_update_badge(
     };
     let icon = Image::from_bytes(icon_bytes)?;
 
-    tray.set_icon_with_as_template(Some(icon), !available)?;
+    tray.set_icon_with_as_template(Some(icon), cfg!(target_os = "macos") && !available)?;
 
     let tooltip = match (available, version) {
         (true, Some(version)) => format!("Parrot — update {version} available"),

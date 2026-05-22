@@ -203,6 +203,18 @@ pub fn model_by_public_id(id: &str) -> Option<ModelDescriptor> {
         .find(|model| model.public_id == id)
 }
 
+pub fn model_for_public_id(
+    id: &str,
+    platform: Platform,
+    architecture: Architecture,
+) -> Option<ModelDescriptor> {
+    catalog().models.into_iter().find(|model| {
+        model.public_id == id
+            && model.platforms.contains(&platform)
+            && model.architectures.contains(&architecture)
+    })
+}
+
 pub fn required_models(
     settings: &DictationLanguageSettings,
     platform: Platform,
@@ -325,6 +337,130 @@ mod tests {
         assert_eq!(apple.concrete_id, "whisperkit-openai-whisper-small-en");
         assert_eq!(intel.public_id, "speech");
         assert_eq!(intel.file_name.as_deref(), Some("ggml-small.en-q5_1.bin"));
+    }
+
+    #[test]
+    fn windows_speech_models_use_whisper_cpp() {
+        let english = speech_model_for(
+            SpeechModelSlot::Speech,
+            Platform::Windows,
+            Architecture::X86_64,
+        )
+        .unwrap();
+        let multilingual = speech_model_for(
+            SpeechModelSlot::SpeechMultilingual,
+            Platform::Windows,
+            Architecture::X86_64,
+        )
+        .unwrap();
+
+        assert_eq!(english.public_id, "speech");
+        assert_eq!(english.runtime, ModelRuntime::Whispercpp);
+        assert_eq!(english.file_name.as_deref(), Some("ggml-small.en-q5_1.bin"));
+        assert_eq!(multilingual.public_id, "speech-multilingual");
+        assert_eq!(multilingual.runtime, ModelRuntime::Whispercpp);
+        assert_eq!(
+            multilingual.file_name.as_deref(),
+            Some("ggml-small-q5_1.bin")
+        );
+    }
+
+    #[test]
+    fn public_id_lookup_can_disambiguate_platform_variants() {
+        let apple_speech =
+            model_for_public_id("speech", Platform::Macos, Architecture::AppleSilicon).unwrap();
+        let windows_speech =
+            model_for_public_id("speech", Platform::Windows, Architecture::X86_64).unwrap();
+
+        assert_eq!(apple_speech.runtime, ModelRuntime::Whisperkit);
+        assert_eq!(
+            apple_speech.concrete_id,
+            "whisperkit-openai-whisper-small-en"
+        );
+        assert_eq!(windows_speech.runtime, ModelRuntime::Whispercpp);
+        assert_eq!(windows_speech.concrete_id, "whispercpp-ggml-small-en-q5-1");
+    }
+
+    #[test]
+    fn windows_cleanup_models_use_llama_cpp() {
+        let cleanup = required_models(
+            &DictationLanguageSettings {
+                dictation_language_mode: DictationLanguageMode::English,
+                dictation_language_code: None,
+                cleanup_model_id: "cleanup".into(),
+            },
+            Platform::Windows,
+            Architecture::X86_64,
+        )
+        .into_iter()
+        .find(|model| model.role == ModelRole::Cleanup)
+        .unwrap();
+
+        let gemma = cleanup_model_for("cleanup-gemma-4-e2b").unwrap();
+
+        assert_eq!(cleanup.public_id, "cleanup");
+        assert_eq!(cleanup.runtime, ModelRuntime::LlamaCpp);
+        assert!(cleanup.platforms.contains(&Platform::Windows));
+        assert!(cleanup.architectures.contains(&Architecture::X86_64));
+        assert_eq!(gemma.runtime, ModelRuntime::LlamaCpp);
+        assert!(gemma.platforms.contains(&Platform::Windows));
+        assert!(gemma.architectures.contains(&Architecture::X86_64));
+    }
+
+    #[test]
+    fn windows_required_models_follow_language_routing() {
+        let english = required_models(
+            &DictationLanguageSettings {
+                dictation_language_mode: DictationLanguageMode::English,
+                dictation_language_code: None,
+                cleanup_model_id: "cleanup".into(),
+            },
+            Platform::Windows,
+            Architecture::X86_64,
+        );
+        let detect = required_models(
+            &DictationLanguageSettings {
+                dictation_language_mode: DictationLanguageMode::Detect,
+                dictation_language_code: None,
+                cleanup_model_id: "cleanup".into(),
+            },
+            Platform::Windows,
+            Architecture::X86_64,
+        );
+        let spanish = required_models(
+            &DictationLanguageSettings {
+                dictation_language_mode: DictationLanguageMode::Specific,
+                dictation_language_code: Some("es".into()),
+                cleanup_model_id: "cleanup".into(),
+            },
+            Platform::Windows,
+            Architecture::X86_64,
+        );
+
+        assert_eq!(english[0].public_id, "speech");
+        assert_eq!(detect[0].public_id, "speech-multilingual");
+        assert_eq!(spanish[0].public_id, "speech-multilingual");
+        assert_eq!(
+            english
+                .iter()
+                .filter(|model| model.role == ModelRole::Speech)
+                .count(),
+            1
+        );
+        assert_eq!(
+            detect
+                .iter()
+                .filter(|model| model.role == ModelRole::Speech)
+                .count(),
+            1
+        );
+        assert_eq!(
+            spanish
+                .iter()
+                .filter(|model| model.role == ModelRole::Speech)
+                .count(),
+            1
+        );
     }
 
     #[test]

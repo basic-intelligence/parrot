@@ -27,6 +27,30 @@ lockfiles are the source of truth for exact versions included in a release.
 | swift-collections     | Apache-2.0 with Swift Runtime Library Exception | https://github.com/apple/swift-collections        |
 | yyjson                | MIT                                             | https://github.com/ibireme/yyjson                 |
 
+## Bundled or Linked in the Windows App
+
+Windows release artifacts bundle or link the components below.
+
+| Component                     | License           | Source                                      |
+| ----------------------------- | ----------------- | ------------------------------------------- |
+| Tauri                         | MIT OR Apache-2.0 | https://github.com/tauri-apps/tauri         |
+| WebView2 Runtime bootstrapper | Microsoft terms   | https://developer.microsoft.com/microsoft-edge/webview2/ |
+| whisper.cpp                   | MIT               | https://github.com/ggml-org/whisper.cpp     |
+| whisper-rs                    | Unlicense         | https://codeberg.org/tazz4843/whisper-rs    |
+| llama.cpp                     | MIT               | https://github.com/ggml-org/llama.cpp       |
+| llama_cpp Rust crate          | MIT OR Apache-2.0 | https://github.com/edgenai/llama_cpp-rs     |
+| cpal                          | Apache-2.0        | https://github.com/RustAudio/cpal           |
+| windows                       | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs     |
+| windows-sys                   | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs     |
+| reqwest                       | MIT OR Apache-2.0 | https://github.com/seanmonstar/reqwest      |
+| sha2                          | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes        |
+
+The Windows sidecar uses Win32 APIs for microphone probing/capture support,
+clipboard paste, keyboard hooks, focused-text UI Automation, window activation,
+and non-blocking sound playback through the `windows` and `windows-sys` crates.
+The configured WebView2 mode embeds Microsoft's online bootstrapper, not a fixed
+offline runtime.
+
 ### Tauri Plugins and Direct Rust Crates
 
 | Component                    | License            | Source                                            |
@@ -79,6 +103,8 @@ lockfiles are the source of truth for exact versions included in a release.
 - Vite: Copyright (c) 2019-present, VoidZero Inc. and Vite contributors
 - @types/node: Copyright (c) Microsoft Corporation.
 - yyjson: Copyright (c) 2020 YaoYuan
+- llama_cpp Rust crate: Copyright remains with upstream contributors.
+- reqwest: Copyright remains with upstream contributors.
 
 ### Apache-2.0-Licensed Components
 
@@ -87,6 +113,13 @@ lockfiles are the source of truth for exact versions included in a release.
 - TypeScript: Copyright (c) Microsoft Corporation.
 - Qwen3.5-2B-GGUF: Copyright Alibaba Cloud.
 - Google Gemma 4 E2B Instruct GGUF: Copyright Google.
+- cpal: Copyright remains with upstream contributors.
+- windows and windows-sys: Copyright Microsoft Corporation.
+- sha2/RustCrypto hashes: Copyright remains with upstream contributors.
+
+### Unlicense Components
+
+- whisper-rs is released under the Unlicense/public-domain dedication.
 
 For package-manager dependencies not called out above, copyright remains with
 the upstream package authors and contributors as stated in their published
@@ -123,6 +156,35 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+## Unlicense Text
+
+```text
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <https://unlicense.org>
 ```
 
 ## Apache License 2.0 Text

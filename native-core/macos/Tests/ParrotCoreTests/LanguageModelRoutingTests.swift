@@ -139,13 +139,13 @@ final class LanguageModelRoutingTests: XCTestCase {
         XCTAssertEqual(english.concreteID, ConcreteModelID.whisperCppSmallEnglishQ5_1)
         XCTAssertEqual(english.repoID, "ggerganov/whisper.cpp")
         XCTAssertEqual(english.fileName, "ggml-small.en-q5_1.bin")
-        XCTAssertEqual(english.expectedBytes, 163_000_000)
+        XCTAssertEqual(english.expectedBytes, 190_098_681)
 
         XCTAssertEqual(multilingual.publicID, "speech-multilingual")
         XCTAssertEqual(multilingual.concreteID, ConcreteModelID.whisperCppSmallQ5_1)
         XCTAssertEqual(multilingual.repoID, "ggerganov/whisper.cpp")
         XCTAssertEqual(multilingual.fileName, "ggml-small-q5_1.bin")
-        XCTAssertEqual(multilingual.expectedBytes, 163_000_000)
+        XCTAssertEqual(multilingual.expectedBytes, 190_085_487)
     }
 
     func testAllLanguageModesUseIntelSafeSpeechRuntimeOnIntel() {

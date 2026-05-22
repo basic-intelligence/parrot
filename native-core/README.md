@@ -1,6 +1,6 @@
 # Native Core
 
-Parrot is currently macOS-only, but native-core code is split so future Windows and Linux sidecars can reuse product behavior instead of copying macOS logic.
+Parrot native-core code keeps shared product behavior in reusable crates and resources while platform adapters live in per-OS sidecars. macOS and Windows are implemented; Linux remains future work.
 
 Shared product logic:
   protocol, settings, model catalog, language routing, prompts,
@@ -15,10 +15,16 @@ Platform adapters:
 
 - `shared/` contains product resources and test fixtures: languages, models, prompts, sound manifests, and behavior fixtures.
 - `macos/` contains the implemented Swift sidecar and macOS platform adapters.
-- `windows/` is a future sidecar placeholder.
+- `windows/` contains the implemented Rust sidecar and Windows platform adapters.
 - `linux/` is a future sidecar placeholder.
 - `../crates/` contains shared Rust product logic used by the Tauri host and fixture tests.
 
-Future sidecars should keep the same newline-delimited JSON request/response boundary used by the macOS sidecar.
+## Platform READMEs
 
-Tauri resource bundling should include shared JSON and prompt resources. Tauri sidecar `externalBin` target-triple naming is reserved for future Windows/Linux sidecars; do not add non-working platform packaging requirements in this foundation refactor.
+- [macOS](macos/README.md)
+- [Windows](windows/README.md)
+- [Linux](linux/README.md)
+
+Sidecars keep the same newline-delimited JSON request/response boundary.
+
+Tauri resource bundling includes shared JSON and prompt resources. Platform-specific build, runtime, signing, and behavior notes live in each platform README.
