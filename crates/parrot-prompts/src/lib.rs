@@ -94,15 +94,15 @@ pub fn cleanup_user_prompt(
 }
 
 pub fn cleanup_system_prompt(dictionary_entries: &[DictionaryEntry]) -> String {
+    let contract = normalize_newlines(CLEANUP_SYSTEM_CONTRACT)
+        .trim_end()
+        .to_string();
     let dictionary_section = dictionary_terms_system_section(dictionary_entries);
+
     if dictionary_section.is_empty() {
-        CLEANUP_SYSTEM_CONTRACT.trim_end().to_string()
+        contract
     } else {
-        format!(
-            "{}\n\n{}",
-            CLEANUP_SYSTEM_CONTRACT.trim_end(),
-            dictionary_section
-        )
+        format!("{contract}\n\n{dictionary_section}")
     }
 }
 
@@ -159,7 +159,7 @@ pub fn escape_prompt_delimited_text(value: &str) -> String {
 }
 
 pub fn sanitized_dictionary_value(value: &str) -> String {
-    value
+    normalize_newlines(value)
         .replace("<|im_start|>", "")
         .replace("<|im_end|>", "")
         .replace("<|turn>system", "")
@@ -167,7 +167,6 @@ pub fn sanitized_dictionary_value(value: &str) -> String {
         .replace("<|turn>model", "")
         .replace("<turn|>", "")
         .replace('\n', " ")
-        .replace('\r', " ")
         .trim()
         .to_string()
 }
@@ -185,11 +184,18 @@ pub fn cleanup_output_token_budget(transcript: &str, default_limit: i32) -> i32 
 }
 
 fn render_template(template: &str, values: &[(&str, &str)]) -> String {
-    values
-        .iter()
-        .fold(template.to_string(), |rendered, (key, value)| {
-            rendered.replace(&format!("{{{{ {key} }}}}"), value)
-        })
+    let mut rendered = normalize_newlines(template);
+
+    for (key, value) in values {
+        let normalized_value = normalize_newlines(value);
+        rendered = rendered.replace(&format!("{{{{ {key} }}}}"), &normalized_value);
+    }
+
+    rendered
+}
+
+fn normalize_newlines(value: &str) -> String {
+    value.replace("\r\n", "\n").replace('\r', "\n")
 }
 
 #[cfg(test)]
@@ -259,6 +265,35 @@ mod tests {
         assert!(prompt.full_prompt.contains("<|turn>system"));
         assert!(prompt.full_prompt.contains("- Project Atlas"));
         assert!(prompt.full_prompt.contains(DEFAULT_CLEANUP_RULES));
+    }
+
+    #[test]
+    fn render_template_normalizes_template_and_value_line_endings() {
+        let rendered = render_template(
+            "one\r\ntwo\rthree\n{{ value }}",
+            &[("value", "four\r\nfive")],
+        );
+
+        assert_eq!(rendered, "one\ntwo\nthree\nfour\nfive");
+    }
+
+    #[test]
+    fn normalized_prompt_contains_fixture_raw_transcript_block() {
+        let input = CleanupPromptInput {
+            cleanup_rules: "Uppercase it.".into(),
+            dictionary_entries: Vec::new(),
+            raw_transcript: "hello world".into(),
+            language: language(),
+            prompt_format: CleanupPromptFormat::Qwen3Chatml,
+            default_output_tokens: 512,
+        };
+
+        let prompt = assemble_cleanup_prompt(&input);
+
+        assert!(prompt
+            .full_prompt
+            .contains("<raw_transcript>\nhello world\n</raw_transcript>"));
+        assert!(!prompt.full_prompt.contains('\r'));
     }
 
     #[test]

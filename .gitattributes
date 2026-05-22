@@ -1,0 +1,27 @@
+* text=auto
+
+native-core/shared/prompts/** text eol=lf
+native-core/shared/test-fixtures/** text eol=lf
+
+*.rs text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.ts text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+
+*.ps1 text eol=crlf
+
+*.png binary
+*.ico binary
+*.icns binary
+*.dmg binary
+*.exe binary
+*.pfx binary
