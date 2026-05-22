@@ -14,7 +14,8 @@
     "build:core:mac": "./scripts/build-native-core-macos.sh",
     "build:core:windows": "powershell -ExecutionPolicy Bypass -File scripts/build-native-core-windows.ps1",
     "build:windows": "tauri build --target x86_64-pc-windows-msvc",
-    "build:windows:qa": "tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.qa.conf.json"
+    "build:windows:cpu": "tauri build --target x86_64-pc-windows-msvc",
+    "build:windows:qa": "powershell -ExecutionPolicy Bypass -Command \"$env:PARROT_WINDOWS_CORE_VARIANTS='cpu,cuda'; npm run tauri -- build --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.qa.conf.json\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",

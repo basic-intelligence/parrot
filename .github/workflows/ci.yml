@@ -55,6 +55,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build Windows sidecar
+        run: npm run build:core:windows
+
+      - name: Verify Tauri Windows sidecar exists
+        shell: pwsh
+        run: |
+          $sidecar = "src-tauri/binaries/parrot-core-cpu-x86_64-pc-windows-msvc.exe"
+          if (-not (Test-Path $sidecar)) {
+            throw "Missing Tauri sidecar: $sidecar"
+          }
+
       - name: Run Rust workspace tests
         run: cargo test --workspace
 
@@ -63,7 +74,3 @@ jobs:
 
       - name: Build frontend
         run: npm run build:ui
-
-      - name: Build Windows sidecar
-        run: npm run build:core:windows
-

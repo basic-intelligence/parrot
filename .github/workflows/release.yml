@@ -83,10 +83,19 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: "Parrot v__VERSION__"
-          releaseBody: "Download the installer below. Existing users can update from inside Parrot."
+          releaseBody: |
+            Download the installer for your platform below.
+
+            - macOS: download the `.dmg`
+            - Windows: download the `-setup.exe` installer
+
+            Existing users can update from inside Parrot.
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
+          updaterJsonKeepUniversal: true
+          retryAttempts: 3
+          assetNamePattern: "Parrot-[platform]-[arch][setup][ext]"
           args: --target universal-apple-darwin
 
   release-windows:
@@ -157,11 +166,19 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: "Parrot v__VERSION__"
-          releaseBody: "Download the installer below. Existing users can update from inside Parrot."
+          releaseBody: |
+            Download the installer for your platform below.
+
+            - macOS: download the `.dmg`
+            - Windows: download the `-setup.exe` installer
+
+            Existing users can update from inside Parrot.
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
+          retryAttempts: 3
+          assetNamePattern: "Parrot-[platform]-[arch][setup][ext]"
           args: --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.signing.generated.json
 
       - name: Verify Windows Authenticode signatures
