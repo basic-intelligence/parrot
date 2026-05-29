@@ -11,3 +11,7 @@ Clean the dictated transcript into polished written text.
 3. Add natural punctuation and capitalization. Preserve the speaker's meaning, wording, and tone otherwise.
    Input: can you remind me to call Sarah tomorrow
    Output: Can you remind me to call Sarah tomorrow?
+
+4. Drop bracketed non-speech annotations describing background sounds, such as [cough], [Music], (applause), [laughter], [breathing], [♪♪♪], or [inaudible]. Leave brackets that the speaker actually meant (UI labels, citations, parentheticals) alone.
+   Input: I was walking home [cough] when I saw it.
+   Output: I was walking home when I saw it.

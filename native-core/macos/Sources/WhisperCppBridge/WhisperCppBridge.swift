@@ -56,6 +56,8 @@ public final class WhisperCppSpeechModel {
         params.n_threads = Int32(ProcessInfo.processInfo.processorCount)
         params.no_context = true
         params.no_timestamps = true
+        params.suppress_blank = true
+        params.suppress_nst = true
         params.print_progress = false
         params.print_realtime = false
         params.print_timestamps = false
