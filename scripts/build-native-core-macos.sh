@@ -232,18 +232,15 @@ if [[ -f "$WHISPER_BINARY" ]]; then
 fi
 
 if command -v codesign >/dev/null 2>&1; then
-  if [[ "${CI:-}" == "true" && -z "${APPLE_SIGNING_IDENTITY:-}" ]]; then
-    echo "APPLE_SIGNING_IDENTITY is required in CI" >&2
-    exit 1
-  fi
+  SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:-}"
 
-  if [[ -n "${APPLE_SIGNING_IDENTITY:-}" ]]; then
+  if [[ -n "$SIGNING_IDENTITY" && "$SIGNING_IDENTITY" != "-" ]]; then
     if [[ -d "$HELPER_FRAMEWORKS/llama.framework" ]]; then
       codesign \
         --force \
         --timestamp \
         --options runtime \
-        --sign "$APPLE_SIGNING_IDENTITY" \
+        --sign "$SIGNING_IDENTITY" \
         "$HELPER_FRAMEWORKS/llama.framework"
     fi
     if [[ -d "$HELPER_FRAMEWORKS/whisper.framework" ]]; then
@@ -251,7 +248,7 @@ if command -v codesign >/dev/null 2>&1; then
         --force \
         --timestamp \
         --options runtime \
-        --sign "$APPLE_SIGNING_IDENTITY" \
+        --sign "$SIGNING_IDENTITY" \
         "$HELPER_FRAMEWORKS/whisper.framework"
     fi
 
@@ -259,7 +256,7 @@ if command -v codesign >/dev/null 2>&1; then
       --force \
       --timestamp \
       --options runtime \
-      --sign "$APPLE_SIGNING_IDENTITY" \
+      --sign "$SIGNING_IDENTITY" \
       "$HELPER_MACOS/parrot-whisper"
 
     codesign \
@@ -267,7 +264,7 @@ if command -v codesign >/dev/null 2>&1; then
       --timestamp \
       --options runtime \
       --entitlements "$HELPER_ENTITLEMENTS" \
-      --sign "$APPLE_SIGNING_IDENTITY" \
+      --sign "$SIGNING_IDENTITY" \
       "$HELPER_MACOS/parrot-core"
 
     codesign \
@@ -275,7 +272,7 @@ if command -v codesign >/dev/null 2>&1; then
       --timestamp \
       --options runtime \
       --entitlements "$HELPER_ENTITLEMENTS" \
-      --sign "$APPLE_SIGNING_IDENTITY" \
+      --sign "$SIGNING_IDENTITY" \
       "$HELPER_APP"
 
     codesign --verify --deep --strict --verbose=2 "$HELPER_APP"
@@ -291,7 +288,7 @@ if command -v codesign >/dev/null 2>&1; then
     codesign --force --sign - "$HELPER_MACOS/parrot-whisper"
     codesign --force --entitlements "$HELPER_ENTITLEMENTS" --sign - "$HELPER_MACOS/parrot-core"
     codesign --force --entitlements "$HELPER_ENTITLEMENTS" --sign - "$HELPER_APP"
-    codesign --verify --deep --strict --verbose=2 "$HELPER_APP" || true
+    codesign --verify --deep --strict --verbose=2 "$HELPER_APP"
   fi
 fi
 

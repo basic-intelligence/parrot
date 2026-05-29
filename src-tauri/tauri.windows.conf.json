@@ -5,7 +5,8 @@
       "nsis"
     ],
     "externalBin": [
-      "binaries/parrot-core-cpu"
+      "binaries/parrot-core-cpu",
+      "binaries/parrot-whisper-cpu"
     ],
     "windows": {
       "webviewInstallMode": {

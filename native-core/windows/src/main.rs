@@ -2,6 +2,7 @@ mod json_lines;
 mod models;
 mod platform;
 mod service;
+mod whisper_protocol;
 
 use crate::{
     json_lines::{error_response, parse_request_line, serialize_json_line},

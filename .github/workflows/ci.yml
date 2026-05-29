@@ -96,11 +96,100 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Prepare macOS CI Tauri config
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+
+          const config = JSON.parse(fs.readFileSync("src-tauri/tauri.macos.conf.json", "utf8"));
+
+          config.bundle = {
+            ...config.bundle,
+            targets: ["app"],
+            createUpdaterArtifacts: false,
+          };
+
+          config.bundle.macOS = {
+            ...config.bundle.macOS,
+            signingIdentity: "-",
+          };
+
+          fs.writeFileSync(
+            "src-tauri/tauri.macos.ci.generated.json",
+            `${JSON.stringify(config, null, 2)}\n`,
+          );
+          NODE
+
+      - name: Build macOS native helper app
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+        run: npm run build:core:mac
+
+      - name: Verify macOS native helper app
+        run: |
+          helper="src-tauri/binaries/Parrot.app"
+
+          test -d "$helper"
+          test -x "$helper/Contents/MacOS/parrot-core"
+          test -x "$helper/Contents/MacOS/parrot-whisper"
+
+          codesign --verify --deep --strict --verbose=2 "$helper"
+
+          core_archs="$(lipo -archs "$helper/Contents/MacOS/parrot-core")"
+          whisper_archs="$(lipo -archs "$helper/Contents/MacOS/parrot-whisper")"
+
+          echo "parrot-core archs: $core_archs"
+          echo "parrot-whisper archs: $whisper_archs"
+
+          [[ " $core_archs " == *" arm64 "* ]]
+          [[ " $core_archs " == *" x86_64 "* ]]
+          [[ " $whisper_archs " == *" arm64 "* ]]
+          [[ " $whisper_archs " == *" x86_64 "* ]]
+
+          entitlements="$(mktemp)"
+          codesign -d --entitlements :- "$helper/Contents/MacOS/parrot-core" > "$entitlements" 2>/dev/null
+          grep -q "com.apple.security.device.audio-input" "$entitlements"
+          rm -f "$entitlements"
+
       - name: Run Swift tests
         run: swift test --package-path native-core/macos
 
-      - name: Build frontend
-        run: npm run build:ui
+      - name: Build macOS Tauri app bundle
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+        run: npm run tauri -- build --target universal-apple-darwin --config src-tauri/tauri.macos.ci.generated.json --bundles app --ci
+
+      - name: Verify macOS Tauri app bundle
+        run: |
+          app="target/universal-apple-darwin/release/bundle/macos/Parrot.app"
+
+          if [[ ! -d "$app" ]]; then
+            app=""
+            if [[ -d "target" ]]; then
+              app="$(find target -type d -path "*/bundle/macos/Parrot.app" -print -quit)"
+            fi
+            if [[ -z "$app" && -d "src-tauri/target" ]]; then
+              app="$(find src-tauri/target -type d -path "*/bundle/macos/Parrot.app" -print -quit)"
+            fi
+          fi
+
+          test -n "$app"
+          test -d "$app"
+          echo "Found Tauri app: $app"
+
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+          helper="$app/Contents/Helpers/Parrot.app"
+          test -d "$helper"
+          test -x "$helper/Contents/MacOS/parrot-core"
+          test -x "$helper/Contents/MacOS/parrot-whisper"
+
+          codesign --verify --deep --strict --verbose=2 "$helper"
+
+          entitlements="$(mktemp)"
+          codesign -d --entitlements :- "$helper/Contents/MacOS/parrot-core" > "$entitlements" 2>/dev/null
+          grep -q "com.apple.security.device.audio-input" "$entitlements"
+          rm -f "$entitlements"
 
   windows:
     name: Windows
@@ -156,16 +245,24 @@ jobs:
       - name: Verify Tauri Windows sidecar exists
         shell: pwsh
         run: |
-          $sidecar = "src-tauri/binaries/parrot-core-cpu-x86_64-pc-windows-msvc.exe"
-          if (-not (Test-Path $sidecar)) {
-            throw "Missing Tauri sidecar: $sidecar"
+          $sidecars = @(
+            "src-tauri/binaries/parrot-core-cpu-x86_64-pc-windows-msvc.exe",
+            "src-tauri/binaries/parrot-whisper-cpu-x86_64-pc-windows-msvc.exe"
+          )
+          foreach ($sidecar in $sidecars) {
+            if (-not (Test-Path $sidecar)) {
+              throw "Missing Tauri sidecar: $sidecar"
+            }
           }
 
       - name: Run Rust workspace tests
         run: cargo test --workspace
 
       - name: Run Windows sidecar tests
-        run: cargo test -p parrot-core --manifest-path native-core/windows/Cargo.toml
+        shell: pwsh
+        run: |
+          cargo test --manifest-path native-core/windows/Cargo.toml --no-default-features --features core-bin --bin parrot-core
+          cargo test --manifest-path native-core/windows/Cargo.toml --no-default-features --features whisper-bin --bin parrot-whisper
 
       - name: Build frontend
         run: npm run build:ui

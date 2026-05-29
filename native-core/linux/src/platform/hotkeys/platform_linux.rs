@@ -411,9 +411,8 @@ fn x11_hotkey_loop(
         let grabs = {
             let engine = engine.lock().expect("hotkey engine poisoned");
             engine
-                .bindings
-                .iter()
-                .filter_map(|binding| grab_for_required_keys(&binding.required_keys, &mapping))
+                .required_key_sets()
+                .filter_map(|required_keys| grab_for_required_keys(required_keys, &mapping))
                 .collect::<Vec<_>>()
         };
 

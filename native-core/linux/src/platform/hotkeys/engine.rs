@@ -53,6 +53,12 @@ impl HotkeyEngine {
         }
     }
 
+    pub fn required_key_sets(&self) -> impl Iterator<Item = &[u32]> + '_ {
+        self.bindings
+            .iter()
+            .map(|binding| binding.required_keys.as_slice())
+    }
+
     pub fn set_cancellation_enabled(&mut self, enabled: bool) {
         self.cancellation_enabled = enabled;
         if !enabled {

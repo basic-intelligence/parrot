@@ -3,9 +3,7 @@ $ErrorActionPreference = "Stop"
 $RootDir = Resolve-Path (Join-Path $PSScriptRoot "..")
 $TargetTriple = "x86_64-pc-windows-msvc"
 $ManifestPath = Join-Path $RootDir "native-core/windows/Cargo.toml"
-$BinaryName = "parrot-core.exe"
 $CargoProfile = "native-core-release"
-$BuiltBinary = Join-Path $RootDir "target/$TargetTriple/$CargoProfile/$BinaryName"
 $OutputDir = Join-Path $RootDir "src-tauri/binaries"
 
 function Get-RustHostTriple {
@@ -90,10 +88,37 @@ function Get-RequestedVariants {
   return $Variants
 }
 
-function Invoke-CoreVariantBuild {
+function Invoke-CargoBinaryBuild {
   param(
     [Parameter(Mandatory = $true)]
     [string]$Variant,
+    [Parameter(Mandatory = $true)]
+    [string]$BinaryName,
+    [Parameter(Mandatory = $true)]
+    [string]$Features
+  )
+
+  Write-Host "Building Windows native binary '$BinaryName' variant '$Variant' for $TargetTriple"
+
+  & cargo build `
+    --manifest-path $ManifestPath `
+    --profile $CargoProfile `
+    --target $TargetTriple `
+    --bin $BinaryName `
+    --no-default-features `
+    --features $Features
+
+  if ($LASTEXITCODE -ne 0) {
+    throw "cargo build failed for native-core/windows binary '$BinaryName' variant '$Variant'."
+  }
+}
+
+function Install-BuiltBinary {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Variant,
+    [Parameter(Mandatory = $true)]
+    [string]$BinaryName,
     [Parameter(Mandatory = $true)]
     [AllowEmptyCollection()]
     [System.Collections.Generic.List[string]]$OutputBinaries,
@@ -102,36 +127,7 @@ function Invoke-CoreVariantBuild {
     [System.Collections.Generic.HashSet[string]]$CopiedLibraries
   )
 
-  $FeatureArgs = @("--no-default-features")
-  if ($Variant -eq "cuda") {
-    $FeatureArgs += @("--features", "cuda")
-
-    $DefaultCudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1"
-    if (-not $env:CUDA_PATH -and (Test-Path $DefaultCudaPath)) {
-      $env:CUDA_PATH = $DefaultCudaPath
-    }
-    if ($env:CUDA_PATH -and -not $env:CUDA_PATH_V13_1) {
-      $env:CUDA_PATH_V13_1 = $env:CUDA_PATH
-    }
-    if ($env:CUDA_PATH -and (Test-Path (Join-Path $env:CUDA_PATH "bin"))) {
-      $CudaBin = Join-Path $env:CUDA_PATH "bin"
-      if (-not (($env:PATH -split ';') -contains $CudaBin)) {
-        $env:PATH = "$CudaBin;$env:PATH"
-      }
-    }
-  }
-
-  Write-Host "Building Windows native core variant '$Variant' for $TargetTriple"
-
-  & cargo build `
-    --manifest-path $ManifestPath `
-    --profile $CargoProfile `
-    --target $TargetTriple `
-    @FeatureArgs
-
-  if ($LASTEXITCODE -ne 0) {
-    throw "cargo build failed for native-core/windows variant '$Variant'."
-  }
+  $BuiltBinary = Join-Path $RootDir "target/$TargetTriple/$CargoProfile/$BinaryName.exe"
 
   if (-not (Test-Path $BuiltBinary)) {
     throw "Expected Windows sidecar binary was not found: $BuiltBinary"
@@ -144,9 +140,9 @@ function Invoke-CoreVariantBuild {
 
   New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
-  $OutputBinary = Join-Path $OutputDir "parrot-core-$Variant-$TargetTriple.exe"
+  $OutputBinary = Join-Path $OutputDir "$BinaryName-$Variant-$TargetTriple.exe"
   Copy-Item -Force $BuiltBinary $OutputBinary
-  $OutputBinaries.Add($OutputBinary)
+  [void]$OutputBinaries.Add($OutputBinary)
 
   $OutputMachine = Get-PeMachine -Path $OutputBinary
   if ($OutputMachine -ne 0x8664) {
@@ -161,7 +157,59 @@ function Invoke-CoreVariantBuild {
     [void]$CopiedLibraries.Add($Destination)
   }
 
-  Write-Host "Installed Windows sidecar variant '$Variant': $OutputBinary"
+  Write-Host "Installed Windows sidecar '$BinaryName' variant '$Variant': $OutputBinary"
+}
+
+function Set-CudaBuildEnvironment {
+  $DefaultCudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.1"
+  if (-not $env:CUDA_PATH -and (Test-Path $DefaultCudaPath)) {
+    $env:CUDA_PATH = $DefaultCudaPath
+  }
+  if ($env:CUDA_PATH -and -not $env:CUDA_PATH_V13_1) {
+    $env:CUDA_PATH_V13_1 = $env:CUDA_PATH
+  }
+  if ($env:CUDA_PATH -and (Test-Path (Join-Path $env:CUDA_PATH "bin"))) {
+    $CudaBin = Join-Path $env:CUDA_PATH "bin"
+    if (-not (($env:PATH -split ';') -contains $CudaBin)) {
+      $env:PATH = "$CudaBin;$env:PATH"
+    }
+  }
+}
+
+function Invoke-CoreVariantBuild {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Variant,
+    [Parameter(Mandatory = $true)]
+    [AllowEmptyCollection()]
+    [System.Collections.Generic.List[string]]$OutputBinaries,
+    [Parameter(Mandatory = $true)]
+    [AllowEmptyCollection()]
+    [System.Collections.Generic.HashSet[string]]$CopiedLibraries
+  )
+
+  if ($Variant -eq "cuda") {
+    Set-CudaBuildEnvironment
+    $CoreFeatures = "cuda-core"
+    $WhisperFeatures = "cuda-whisper"
+  } else {
+    $CoreFeatures = "core-bin"
+    $WhisperFeatures = "whisper-bin"
+  }
+
+  Invoke-CargoBinaryBuild -Variant $Variant -BinaryName "parrot-core" -Features $CoreFeatures
+  Install-BuiltBinary `
+    -Variant $Variant `
+    -BinaryName "parrot-core" `
+    -OutputBinaries $OutputBinaries `
+    -CopiedLibraries $CopiedLibraries
+
+  Invoke-CargoBinaryBuild -Variant $Variant -BinaryName "parrot-whisper" -Features $WhisperFeatures
+  Install-BuiltBinary `
+    -Variant $Variant `
+    -BinaryName "parrot-whisper" `
+    -OutputBinaries $OutputBinaries `
+    -CopiedLibraries $CopiedLibraries
 }
 
 $OutputBinaries = [System.Collections.Generic.List[string]]::new()

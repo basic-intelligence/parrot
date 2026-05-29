@@ -10,7 +10,9 @@ if (-not $Path -or $Path.Count -eq 0) {
   $Candidates = @()
   $Sidecars = @(
     (Join-Path $RootDir "src-tauri/binaries/parrot-core-cpu-x86_64-pc-windows-msvc.exe"),
-    (Join-Path $RootDir "src-tauri/binaries/parrot-core-cuda-x86_64-pc-windows-msvc.exe")
+    (Join-Path $RootDir "src-tauri/binaries/parrot-core-cuda-x86_64-pc-windows-msvc.exe"),
+    (Join-Path $RootDir "src-tauri/binaries/parrot-whisper-cpu-x86_64-pc-windows-msvc.exe"),
+    (Join-Path $RootDir "src-tauri/binaries/parrot-whisper-cuda-x86_64-pc-windows-msvc.exe")
   )
   foreach ($Sidecar in $Sidecars) {
     if (Test-Path $Sidecar) {

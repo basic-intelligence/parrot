@@ -1,30 +1,26 @@
-use crate::models::downloads::{model_path, windows_descriptor_for};
-use anyhow::{anyhow, Context};
-use parrot_language::{
-    decode_language_code, detected_language_metadata, selected_language_metadata,
-    DictationLanguageMetadata, DictationLanguageSettings, SpeechModelSlot,
+use crate::{
+    models::downloads::{model_path, windows_descriptor_for},
+    whisper_protocol::{Transcription, WhisperHelperRequest, WhisperHelperResponse},
 };
+use anyhow::{anyhow, Context};
+use parrot_language::{DictationLanguageSettings, SpeechModelSlot};
 use parrot_protocol::{AppSettings, NativeCorePaths};
 use std::{
-    collections::HashMap,
+    env, fs,
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
+    process::{Child, ChildStdin, Command, Stdio},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
-};
-use whisper_rs::{
-    get_lang_str, FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters,
+    thread,
 };
 
 #[derive(Clone, Default)]
 pub struct WhisperCppPipeline {
-    contexts: Arc<Mutex<HashMap<PathBuf, Arc<WhisperContext>>>>,
-}
-
-pub struct Transcription {
-    pub text: String,
-    pub language: DictationLanguageMetadata,
+    helper: Arc<Mutex<Option<WhisperHelperProcess>>>,
+    request_counter: Arc<AtomicU64>,
 }
 
 impl WhisperCppPipeline {
@@ -32,8 +28,10 @@ impl WhisperCppPipeline {
         let descriptor = speech_descriptor(settings)?;
         let path = model_path(&descriptor, paths)?;
         ensure_model_file(&path)?;
-        let _ = self.context_for(&path)?;
-        Ok(())
+
+        let request = WhisperHelperRequest::warm(self.next_request_id(), path_to_string(&path));
+        let response = self.request_helper(&request)?;
+        ensure_success(response, false).map(|_| ())
     }
 
     pub fn transcribe(
@@ -70,72 +68,171 @@ impl WhisperCppPipeline {
             return Err(anyhow!("Recording cancelled."));
         }
 
-        let language_settings = DictationLanguageSettings::from(settings);
         let descriptor = speech_descriptor(settings)?;
-        let path = model_path(&descriptor, paths)?;
-        ensure_model_file(&path)?;
+        let model_path = model_path(&descriptor, paths)?;
+        ensure_model_file(&model_path)?;
 
-        let context = self.context_for(&path)?;
-        let mut state = context
-            .create_state()
-            .context("failed to create Whisper.cpp state")?;
-        let language_code = decode_language_code(&language_settings);
-        let detect_language = language_code.is_none();
-        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-        params.set_n_threads(default_thread_count());
-        params.set_language(language_code.as_deref());
-        params.set_detect_language(detect_language);
-        params.set_translate(false);
-        params.set_no_context(true);
-        params.set_no_timestamps(true);
-        params.set_print_special(false);
-        params.set_print_progress(false);
-        params.set_print_realtime(false);
-        params.set_print_timestamps(false);
+        let request_id = self.next_request_id();
+        let audio_path = write_audio_samples(samples_16khz, paths, &request_id)?;
+        let request = WhisperHelperRequest::transcribe(
+            request_id,
+            path_to_string(&model_path),
+            path_to_string(&audio_path),
+            DictationLanguageSettings::from(settings),
+        );
 
-        state
-            .full(params, samples_16khz)
-            .context("Whisper.cpp transcription failed")?;
+        let response = if is_cancelled(cancel_flag.as_ref()) {
+            Err(anyhow!("Recording cancelled."))
+        } else {
+            self.request_helper(&request)
+        };
+        let remove_result = fs::remove_file(&audio_path);
+        if let Err(error) = remove_result {
+            eprintln!(
+                "failed to remove temporary Windows whisper audio {}: {error}",
+                audio_path.display()
+            );
+        }
+
         if is_cancelled(cancel_flag.as_ref()) {
             return Err(anyhow!("Recording cancelled."));
         }
 
-        let text = state
-            .as_iter()
-            .map(|segment| segment.to_string())
-            .collect::<String>()
-            .trim()
-            .to_string();
-        if text.is_empty() {
-            return Err(anyhow!("Transcription was empty."));
-        }
-
-        let language = if detect_language {
-            detected_language_metadata(get_lang_str(state.full_lang_id_from_state()))
-        } else {
-            selected_language_metadata(&language_settings)
-        };
-
-        Ok(Transcription { text, language })
+        ensure_success(response?, true)?
+            .ok_or_else(|| anyhow!("parrot-whisper returned no transcription result."))
     }
 
-    fn context_for(&self, path: &Path) -> anyhow::Result<Arc<WhisperContext>> {
-        let key = path.to_path_buf();
-        let mut contexts = self
-            .contexts
-            .lock()
-            .expect("whisper context cache poisoned");
-        if let Some(context) = contexts.get(&key).cloned() {
-            return Ok(context);
+    fn request_helper(
+        &self,
+        request: &WhisperHelperRequest,
+    ) -> anyhow::Result<WhisperHelperResponse> {
+        let mut helper = self.helper.lock().expect("whisper helper poisoned");
+        if helper.is_none() {
+            *helper = Some(WhisperHelperProcess::start()?);
         }
 
-        let context = Arc::new(
-            WhisperContext::new_with_params(path, WhisperContextParameters::default())
-                .with_context(|| format!("failed to load Whisper.cpp model {}", path.display()))?,
-        );
-        contexts.insert(key, context.clone());
-        Ok(context)
+        let first_result = helper
+            .as_mut()
+            .expect("whisper helper missing after start")
+            .request(request);
+        match first_result {
+            Ok(response) => Ok(response),
+            Err(error) => {
+                eprintln!("Windows parrot-whisper request failed; restarting helper: {error}");
+                helper.take();
+                *helper = Some(WhisperHelperProcess::start()?);
+                helper
+                    .as_mut()
+                    .expect("whisper helper missing after restart")
+                    .request(request)
+                    .context("parrot-whisper request failed after helper restart")
+            }
+        }
     }
+
+    fn next_request_id(&self) -> String {
+        let id = self.request_counter.fetch_add(1, Ordering::SeqCst) + 1;
+        format!("whisper-{id}")
+    }
+}
+
+struct WhisperHelperProcess {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<std::process::ChildStdout>,
+}
+
+impl WhisperHelperProcess {
+    fn start() -> anyhow::Result<Self> {
+        let helper_path = helper_executable_path()?;
+        if !helper_path.exists() {
+            return Err(anyhow!(
+                "parrot-whisper helper is missing: {}",
+                helper_path.display()
+            ));
+        }
+
+        let mut command = Command::new(&helper_path);
+        command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = command
+            .spawn()
+            .with_context(|| format!("failed to spawn {}", helper_path.display()))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow!("failed to open parrot-whisper stdin"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow!("failed to open parrot-whisper stdout"))?;
+        if let Some(stderr) = child.stderr.take() {
+            drain_stderr(stderr);
+        }
+
+        Ok(Self {
+            child,
+            stdin,
+            stdout: BufReader::new(stdout),
+        })
+    }
+
+    fn request(&mut self, request: &WhisperHelperRequest) -> anyhow::Result<WhisperHelperResponse> {
+        let line = serde_json::to_string(request)? + "\n";
+        self.stdin
+            .write_all(line.as_bytes())
+            .context("failed to write parrot-whisper request")?;
+        self.stdin
+            .flush()
+            .context("failed to flush parrot-whisper request")?;
+
+        let mut response_line = String::new();
+        let bytes = self
+            .stdout
+            .read_line(&mut response_line)
+            .context("failed to read parrot-whisper response")?;
+        if bytes == 0 {
+            return Err(anyhow!("parrot-whisper helper closed stdout"));
+        }
+
+        let response: WhisperHelperResponse = serde_json::from_str(response_line.trim())
+            .context("invalid parrot-whisper response")?;
+        if response.id != request.id {
+            return Err(anyhow!(
+                "parrot-whisper returned response id `{}` for request `{}`",
+                response.id,
+                request.id
+            ));
+        }
+
+        Ok(response)
+    }
+}
+
+impl Drop for WhisperHelperProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn ensure_success(
+    response: WhisperHelperResponse,
+    expects_result: bool,
+) -> anyhow::Result<Option<Transcription>> {
+    if response.ok {
+        return Ok(response.result);
+    }
+
+    let fallback = if expects_result {
+        "parrot-whisper transcription failed without an error message."
+    } else {
+        "parrot-whisper warmup failed without an error message."
+    };
+    Err(anyhow!(response.error.unwrap_or_else(|| fallback.into())))
 }
 
 fn speech_descriptor(settings: &AppSettings) -> anyhow::Result<parrot_models::ModelDescriptor> {
@@ -148,18 +245,88 @@ fn speech_descriptor(settings: &AppSettings) -> anyhow::Result<parrot_models::Mo
         .ok_or_else(|| anyhow!("No Windows speech model is available for {public_id}."))
 }
 
-fn ensure_model_file(path: &std::path::Path) -> anyhow::Result<()> {
+fn write_audio_samples(
+    samples_16khz: &[f32],
+    paths: &NativeCorePaths,
+    request_id: &str,
+) -> anyhow::Result<PathBuf> {
+    let temp_dir = if paths.temp_dir.trim().is_empty() {
+        env::temp_dir()
+    } else {
+        PathBuf::from(&paths.temp_dir)
+    };
+    fs::create_dir_all(&temp_dir)
+        .with_context(|| format!("failed to create temp directory {}", temp_dir.display()))?;
+
+    let audio_path = temp_dir.join(format!(
+        "parrot-whisper-{}-{request_id}.f32",
+        std::process::id()
+    ));
+    let mut bytes = Vec::with_capacity(samples_16khz.len() * std::mem::size_of::<f32>());
+    for sample in samples_16khz {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    fs::write(&audio_path, bytes)
+        .with_context(|| format!("failed to write {}", audio_path.display()))?;
+    Ok(audio_path)
+}
+
+fn helper_executable_path() -> anyhow::Result<PathBuf> {
+    if let Some(path) = env::var_os("PARROT_WHISPER_HELPER_PATH") {
+        return Ok(PathBuf::from(path));
+    }
+
+    let current_exe = env::current_exe().context("failed to locate parrot-core executable")?;
+    let current_name = current_exe
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("parrot-core.exe");
+    let helper_name = helper_name_for_core_name(current_name);
+    Ok(current_exe
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(helper_name))
+}
+
+fn helper_name_for_core_name(core_name: &str) -> String {
+    core_name
+        .strip_prefix("parrot-core")
+        .map(|suffix| format!("parrot-whisper{suffix}"))
+        .unwrap_or_else(|| {
+            if core_name.ends_with(".exe") {
+                "parrot-whisper.exe".into()
+            } else {
+                "parrot-whisper".into()
+            }
+        })
+}
+
+fn drain_stderr(stderr: std::process::ChildStderr) {
+    thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            match line {
+                Ok(line) if !line.trim().is_empty() => eprintln!("parrot-whisper stderr: {line}"),
+                Ok(_) => {}
+                Err(error) => {
+                    eprintln!("failed to read parrot-whisper stderr: {error}");
+                    break;
+                }
+            }
+        }
+    });
+}
+
+fn path_to_string(path: &Path) -> String {
+    path.display().to_string()
+}
+
+fn ensure_model_file(path: &Path) -> anyhow::Result<()> {
     if path.exists() {
         Ok(())
     } else {
         Err(anyhow!("Model download required: {}", path.display()))
     }
-}
-
-fn default_thread_count() -> i32 {
-    std::thread::available_parallelism()
-        .map(|count| count.get().clamp(1, 16) as i32)
-        .unwrap_or(4)
 }
 
 fn is_cancelled(cancel_flag: Option<&Arc<AtomicBool>>) -> bool {
@@ -173,8 +340,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_thread_count_stays_in_supported_range() {
-        let count = default_thread_count();
-        assert!((1..=16).contains(&count));
+    fn helper_name_preserves_tauri_variant_suffix() {
+        assert_eq!(
+            helper_name_for_core_name("parrot-core-cpu-x86_64-pc-windows-msvc.exe"),
+            "parrot-whisper-cpu-x86_64-pc-windows-msvc.exe"
+        );
+        assert_eq!(
+            helper_name_for_core_name("parrot-core-cuda-x86_64-pc-windows-msvc.exe"),
+            "parrot-whisper-cuda-x86_64-pc-windows-msvc.exe"
+        );
+    }
+
+    #[test]
+    fn helper_name_falls_back_for_unexpected_core_name() {
+        assert_eq!(
+            helper_name_for_core_name("parrot-core.exe"),
+            "parrot-whisper.exe"
+        );
+        assert_eq!(helper_name_for_core_name("unit-test"), "parrot-whisper");
     }
 }

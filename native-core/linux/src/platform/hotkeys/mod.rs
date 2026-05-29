@@ -14,7 +14,9 @@ use platform_linux::PlatformHook;
 #[cfg(any(not(target_os = "linux"), test))]
 use platform_stub::PlatformHook;
 
-pub use backend::{choose_backend, choose_backend_with_availability, BackendAvailability};
+pub use backend::{
+    choose_backend, choose_backend_with_availability, resolve_hotkey_backend, BackendAvailability,
+};
 pub use engine::{HotkeyEngine, HotkeyEngineOutcome};
 pub use keys::{
     is_ascii_alphanumeric_key, is_modifier_key, linux_key_label, linux_key_sort_key,

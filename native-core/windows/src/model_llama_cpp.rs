@@ -405,12 +405,12 @@ fn is_cancelled(cancel_flag: &Arc<AtomicBool>) -> bool {
 }
 
 fn cleanup_gpu_layer_count() -> u32 {
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "cuda-core")]
     {
         99
     }
 
-    #[cfg(not(feature = "cuda"))]
+    #[cfg(not(feature = "cuda-core"))]
     {
         0
     }

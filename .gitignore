@@ -41,6 +41,9 @@ src-tauri/tauri.windows.signing.generated.json
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
 
+# Generated Tauri CI configs.
+src-tauri/*.generated.json
+
 # Swift Package Manager
 native-core/.build/
 native-core/macos/.build-*/

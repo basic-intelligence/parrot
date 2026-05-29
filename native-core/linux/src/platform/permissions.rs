@@ -1,6 +1,6 @@
 use crate::platform::{
     audio::probe_input_device, compositor, desktop_supports_compositor_commands,
-    detect_environment, detect_session, evdev_hotkeys, hotkeys::backend::resolve_hotkey_backend,
+    detect_environment, detect_session, evdev_hotkeys, hotkeys::resolve_hotkey_backend,
     portal_probe, wayland_paste_message, LinuxDesktop, LinuxHotkeyBackend, LinuxSession,
 };
 use anyhow::anyhow;

@@ -24,7 +24,9 @@ $Config = [ordered]@{
   bundle = [ordered]@{
     externalBin = @(
       "binaries/parrot-core-cpu",
-      "binaries/parrot-core-cuda"
+      "binaries/parrot-core-cuda",
+      "binaries/parrot-whisper-cpu",
+      "binaries/parrot-whisper-cuda"
     )
     windows = [ordered]@{
       certificateThumbprint = $env:WINDOWS_CERTIFICATE_THUMBPRINT

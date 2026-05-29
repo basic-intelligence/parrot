@@ -4,10 +4,20 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.77.2"
 
+[[bin]]
+name = "parrot-core"
+path = "src/main.rs"
+required-features = ["core-bin"]
+
+[[bin]]
+name = "parrot-whisper"
+path = "src/whisper_main.rs"
+required-features = ["whisper-bin"]
+
 [dependencies]
 anyhow = { workspace = true }
 cpal = "0.15"
-llama-cpp-2 = { version = "0.1.146", default-features = false, features = ["dynamic-link"] }
+llama-cpp-2 = { version = "0.1.146", default-features = false, features = ["dynamic-link"], optional = true }
 parrot-cleanup = { path = "../../crates/parrot-cleanup" }
 parrot-language = { path = "../../crates/parrot-language" }
 parrot-models = { path = "../../crates/parrot-models" }
@@ -20,11 +30,14 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10"
 tokio = { version = "1", features = ["rt", "time"] }
-whisper-rs = { version = "0.16.0", default-features = false }
+whisper-rs = { version = "0.16.0", default-features = false, optional = true }
 
 [features]
 default = []
-cuda = ["whisper-rs/cuda", "llama-cpp-2/cuda"]
+core-bin = ["dep:llama-cpp-2"]
+whisper-bin = ["dep:whisper-rs"]
+cuda-core = ["core-bin", "llama-cpp-2/cuda"]
+cuda-whisper = ["whisper-bin", "whisper-rs/cuda"]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.59", features = [
