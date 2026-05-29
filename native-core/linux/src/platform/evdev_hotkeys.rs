@@ -1,12 +1,14 @@
 #[cfg(target_os = "linux")]
 mod imp {
+    #[cfg(test)]
+    use crate::platform::shortcut_capture::shortcut_from_linux_key_codes;
     use crate::platform::{
         hotkeys::{
             HotkeyAction, HotkeyEngine, HotkeySource, KeyEventKind, XK_ALT_L, XK_ALT_R,
             XK_CONTROL_L, XK_CONTROL_R, XK_DELETE, XK_DOWN, XK_ESCAPE, XK_F1, XK_LEFT, XK_META_L,
             XK_META_R, XK_RETURN, XK_RIGHT, XK_SHIFT_L, XK_SHIFT_R, XK_SPACE, XK_TAB, XK_UP,
         },
-        shortcut_capture::{shortcut_from_linux_key_codes, CaptureState},
+        shortcut_capture::CaptureState,
     };
     use anyhow::{anyhow, Context};
     use evdev::{Device, EventSummary, KeyCode};
@@ -26,12 +28,14 @@ mod imp {
     const EVDEV_PERMISSION_MESSAGE: &str =
         "No readable Linux keyboard input devices were found. Add your user to the input group, log out, and log back in.";
 
+    #[cfg_attr(test, allow(dead_code))]
     pub struct EvdevHotkeyHook {
         running: Arc<AtomicBool>,
         joins: Vec<thread::JoinHandle<()>>,
         engine: Arc<Mutex<HotkeyEngine>>,
     }
 
+    #[cfg_attr(test, allow(dead_code))]
     impl EvdevHotkeyHook {
         pub fn start(
             engine: HotkeyEngine,
@@ -112,7 +116,7 @@ mod imp {
 
         for path in paths {
             match Device::open(&path) {
-                Ok(mut device) => {
+                Ok(device) => {
                     device
                         .set_nonblocking(true)
                         .with_context(|| format!("could not set {} nonblocking", path.display()))?;
@@ -249,6 +253,7 @@ mod imp {
             && (keys.contains(KeyCode::KEY_A) || keys.contains(KeyCode::KEY_F9)))
     }
 
+    #[cfg_attr(test, allow(dead_code))]
     fn device_loop(
         path: PathBuf,
         running: Arc<AtomicBool>,
@@ -386,6 +391,7 @@ mod imp {
         }
     }
 
+    #[cfg(test)]
     pub fn shortcut_from_evdev_keys(
         keys: Vec<KeyCode>,
         mode: ShortcutMode,

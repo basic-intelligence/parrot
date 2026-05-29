@@ -53,6 +53,7 @@ impl HotkeyEngine {
         }
     }
 
+    #[cfg_attr(test, allow(dead_code))]
     pub fn required_key_sets(&self) -> impl Iterator<Item = &[u32]> + '_ {
         self.bindings
             .iter()

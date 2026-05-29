@@ -17,9 +17,11 @@ use std::{
     },
     time::Duration,
 };
+#[cfg(target_os = "windows")]
+use tauri::PhysicalPosition;
+use tauri::{AppHandle, Emitter, Manager};
 #[cfg(target_os = "linux")]
 use tauri_plugin_shell::process::Command;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition};
 use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
@@ -51,8 +53,11 @@ enum OverlayAction {
 }
 
 static OVERLAY_GENERATION: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_os = "windows")]
 const RECORDING_OVERLAY_WIDTH: u32 = 148;
+#[cfg(target_os = "windows")]
 const RECORDING_OVERLAY_HEIGHT: u32 = 36;
+#[cfg(target_os = "windows")]
 const RECORDING_OVERLAY_BOTTOM_MARGIN: i32 = 96;
 
 const CPU_SIDECAR: &str = "parrot-core-cpu";
@@ -325,10 +330,7 @@ fn preferred_sidecars() -> Vec<&'static str> {
 }
 
 #[cfg(target_os = "linux")]
-fn configure_linux_sidecar_library_path(
-    app: &AppHandle,
-    command: Command,
-) -> Command {
+fn configure_linux_sidecar_library_path(app: &AppHandle, command: Command) -> Command {
     use std::path::PathBuf;
 
     let mut paths = Vec::<PathBuf>::new();
@@ -605,6 +607,11 @@ fn show_recording_overlay(app: &AppHandle) {
     if let Err(error) = window.show() {
         eprintln!("failed to show recording overlay: {error}");
     }
+}
+
+#[cfg(all(test, not(target_os = "linux"), not(target_os = "windows")))]
+fn show_recording_overlay(_app: &AppHandle) {
+    OVERLAY_GENERATION.fetch_add(1, Ordering::SeqCst);
 }
 
 fn hide_recording_overlay(app: &AppHandle) {

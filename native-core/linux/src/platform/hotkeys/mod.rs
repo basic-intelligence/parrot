@@ -14,10 +14,10 @@ use platform_linux::PlatformHook;
 #[cfg(any(not(target_os = "linux"), test))]
 use platform_stub::PlatformHook;
 
-pub use backend::{
-    choose_backend, choose_backend_with_availability, resolve_hotkey_backend, BackendAvailability,
-};
-pub use engine::{HotkeyEngine, HotkeyEngineOutcome};
+pub use backend::resolve_hotkey_backend;
+#[cfg(test)]
+pub use backend::{choose_backend_with_availability, BackendAvailability};
+pub use engine::HotkeyEngine;
 pub use keys::{
     is_ascii_alphanumeric_key, is_modifier_key, linux_key_label, linux_key_sort_key,
     normalize_configured_key_for_capture, XK_ALT_L, XK_ALT_R, XK_CONTROL_L, XK_CONTROL_R,
@@ -25,9 +25,9 @@ pub use keys::{
     XK_RIGHT, XK_SHIFT_L, XK_SHIFT_R, XK_SPACE, XK_TAB, XK_UP,
 };
 pub use types::{HotkeyAction, HotkeySource, KeyEventKind};
-pub use validation::{
-    shortcut_required_keys, shortcuts_conflict, validate_shortcut, validate_shortcut_pair,
-};
+#[cfg(test)]
+pub use validation::validate_shortcut;
+pub use validation::validate_shortcut_pair;
 
 use crate::platform::{detect_environment, LinuxSession};
 use anyhow::anyhow;

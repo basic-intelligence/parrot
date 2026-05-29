@@ -1,15 +1,16 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Command as StdCommand,
-};
+use std::{fs, path::PathBuf, process::Command as StdCommand};
 
+#[cfg_attr(any(test, not(target_os = "linux")), allow(dead_code))]
 pub const RECORDING_OVERLAY_WIDTH: u32 = 148;
+#[cfg_attr(any(test, not(target_os = "linux")), allow(dead_code))]
 pub const RECORDING_OVERLAY_HEIGHT: u32 = 36;
+#[cfg_attr(any(test, not(target_os = "linux")), allow(dead_code))]
 pub const RECORDING_OVERLAY_BOTTOM_MARGIN: i32 = 96;
+#[cfg_attr(any(test, not(target_os = "linux")), allow(dead_code))]
 pub const RECORDING_OVERLAY_TITLE: &str = "Parrot Recording";
 pub const HYPRLAND_SOURCE_LINE: &str = "source = ~/.config/hypr/parrot.conf";
 
+#[cfg_attr(any(test, not(target_os = "linux")), allow(dead_code))]
 pub fn hyprctl_command() -> StdCommand {
     let mut command = StdCommand::new("hyprctl");
     let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR");
@@ -27,6 +28,7 @@ pub fn hyprctl_command() -> StdCommand {
     command
 }
 
+#[cfg_attr(any(test, not(target_os = "linux")), allow(dead_code))]
 pub fn hyprland_instance_signature(runtime_dir: PathBuf) -> Option<String> {
     let hypr_dir = runtime_dir.join("hypr");
     fs::read_dir(hypr_dir)
@@ -39,8 +41,4 @@ pub fn hyprland_instance_signature(runtime_dir: PathBuf) -> Option<String> {
                 .unwrap_or(false)
         })
         .and_then(|entry| entry.file_name().into_string().ok())
-}
-
-pub fn discover_hyprland_signature(runtime_dir: &Path) -> Option<String> {
-    hyprland_instance_signature(runtime_dir.to_path_buf())
 }
