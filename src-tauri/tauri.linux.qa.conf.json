@@ -23,6 +23,7 @@
         "depends": [
           "xdotool",
           "libxdo3",
+          "libasound2",
           "libpulse0",
           "pipewire-pulse | pulseaudio"
         ]

@@ -36,6 +36,7 @@ jobs:
             file \
             libxdo-dev \
             libpulse-dev \
+            libasound2-dev \
             libssl-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
@@ -70,6 +71,36 @@ jobs:
           bundle_dir="src-tauri/target/x86_64-unknown-linux-gnu/release/bundle"
           find "$bundle_dir" -type f -name "*.AppImage" -print -quit | grep -q .
           find "$bundle_dir" -type f -name "*.deb" -print -quit | grep -q .
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Ensure CMake is available
+        run: cmake --version || brew install cmake
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Swift tests
+        run: swift test --package-path native-core/macos
+
+      - name: Build frontend
+        run: npm run build:ui
 
   windows:
     name: Windows

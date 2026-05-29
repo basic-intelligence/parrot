@@ -26,6 +26,7 @@ sudo apt-get install -y \
   file \
   libxdo-dev \
   libpulse-dev \
+  libasound2-dev \
   libssl-dev \
   libayatana-appindicator3-dev \
   librsvg2-dev \
@@ -105,7 +106,8 @@ Then log out and back in.
 ## Runtime Dependencies
 
 The `.deb` declares `xdotool` and `libxdo3` for X11 paste injection, plus
-`libpulse0` and `pipewire-pulse | pulseaudio` for desktop microphone capture.
+`libpulse0`, `libasound2`, and `pipewire-pulse | pulseaudio` for desktop
+microphone capture.
 On Wayland, Parrot uses compositor shortcuts, the XDG Desktop Portal
 GlobalShortcuts API, or evdev for shortcuts and looks for known paste helpers in
 system locations.

@@ -46,6 +46,7 @@ fn microphone_snapshot(state: PermissionState) -> PermissionSnapshot {
         accessibility: None,
         input_monitoring: None,
         all_granted: Some(granted),
+        linux_hotkey_backend: None,
     }
 }
 
