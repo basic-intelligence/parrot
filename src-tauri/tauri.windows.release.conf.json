@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": [
+      "nsis"
+    ],
+    "externalBin": [
+      "binaries/parrot-core-cpu",
+      "binaries/parrot-core-cuda",
+      "binaries/parrot-whisper-cpu",
+      "binaries/parrot-whisper-cuda"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

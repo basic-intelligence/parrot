@@ -90,6 +90,8 @@ jobs:
             - Windows: download the `-setup.exe` installer
             - Linux: download the `.AppImage` or `.deb`
 
+            Note: Windows builds are unsigned for this release, so Windows may show an "Unknown publisher" warning.
+
             Existing users can update from inside Parrot.
           releaseDraft: true
           prerelease: false
@@ -144,15 +146,6 @@ jobs:
             Write-Host "Ninja is not installed; the current Windows release build does not require it."
           }
 
-      - name: Import Windows signing certificate
-        env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: powershell -ExecutionPolicy Bypass -File scripts/import-windows-signing-certificate.ps1
-
-      - name: Prepare Windows signing config
-        run: powershell -ExecutionPolicy Bypass -File scripts/write-windows-signing-config.ps1
-
       - name: Install dependencies
         run: npm ci
 
@@ -174,6 +167,8 @@ jobs:
             - Windows: download the `-setup.exe` installer
             - Linux: download the `.AppImage` or `.deb`
 
+            Note: Windows builds are unsigned for this release, so Windows may show an "Unknown publisher" warning.
+
             Existing users can update from inside Parrot.
           releaseDraft: true
           prerelease: false
@@ -181,10 +176,7 @@ jobs:
           updaterJsonPreferNsis: true
           retryAttempts: 3
           assetNamePattern: "Parrot-[platform]-[arch][setup][ext]"
-          args: --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.signing.generated.json
-
-      - name: Verify Windows Authenticode signatures
-        run: powershell -ExecutionPolicy Bypass -File scripts/verify-windows-signatures.ps1
+          args: --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.release.conf.json
 
   release-linux:
     permissions:
@@ -268,6 +260,8 @@ jobs:
             - macOS: download the `.dmg`
             - Windows: download the `-setup.exe` installer
             - Linux: download the `.AppImage` or `.deb`
+
+            Note: Windows builds are unsigned for this release, so Windows may show an "Unknown publisher" warning.
 
             Existing users can update from inside Parrot.
           releaseDraft: true
