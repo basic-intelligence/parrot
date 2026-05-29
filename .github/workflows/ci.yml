@@ -54,8 +54,8 @@ jobs:
           sidecar="src-tauri/binaries/parrot-core-cpu-x86_64-unknown-linux-gnu"
           test -x "$sidecar"
 
-      - name: Run Rust workspace tests
-        run: cargo test --workspace
+      - name: Run shared Rust workspace tests
+        run: cargo test --workspace --exclude parrot-core-linux --exclude parrot-core
 
       - name: Run Linux sidecar tests
         run: cargo test --manifest-path native-core/linux/Cargo.toml
@@ -255,8 +255,8 @@ jobs:
             }
           }
 
-      - name: Run Rust workspace tests
-        run: cargo test --workspace
+      - name: Run shared Rust workspace tests
+        run: cargo test --workspace --exclude parrot-core-linux --exclude parrot-core
 
       - name: Run Windows sidecar tests
         shell: pwsh

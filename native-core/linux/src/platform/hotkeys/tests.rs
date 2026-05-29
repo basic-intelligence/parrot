@@ -1,8 +1,8 @@
 use super::*;
-use crate::platform::{LinuxDesktop, LinuxEnvironment};
+use crate::platform::{LinuxDesktop, LinuxEnvironment, LinuxHotkeyBackend};
 use parrot_protocol::{
     default_linux_hands_free_shortcut, default_linux_push_to_talk_shortcut, ShortcutChord,
-    ShortcutKey, ShortcutModifier, ShortcutPlatformCodes,
+    ShortcutKey, ShortcutMode, ShortcutModifier, ShortcutPlatformCodes, ShortcutSettings,
 };
 
 fn shortcut(name: &str, mode: ShortcutMode, keys: Vec<u32>) -> ShortcutSettings {
