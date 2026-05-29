@@ -1,6 +1,6 @@
 # Native Core
 
-Parrot native-core code keeps shared product behavior in reusable crates and resources while platform adapters live in per-OS sidecars. macOS and Windows are implemented; Linux remains future work.
+Parrot native-core code keeps shared product behavior in reusable crates and resources while platform adapters live in per-OS sidecars. macOS and Windows are implemented; Linux is implemented as a first-pass x86_64 CPU-only Rust sidecar.
 
 Shared product logic:
   protocol, settings, model catalog, language routing, prompts,
@@ -16,7 +16,7 @@ Platform adapters:
 - `shared/` contains product resources and test fixtures: languages, models, prompts, sound manifests, and behavior fixtures.
 - `macos/` contains the implemented Swift sidecar and macOS platform adapters.
 - `windows/` contains the implemented Rust sidecar and Windows platform adapters.
-- `linux/` is a future sidecar placeholder.
+- `linux/` contains the first-pass Rust sidecar and Linux platform adapters.
 - `../crates/` contains shared Rust product logic used by the Tauri host and fixture tests.
 
 ## Platform READMEs

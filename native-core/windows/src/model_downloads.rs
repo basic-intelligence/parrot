@@ -13,9 +13,12 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread,
+    time::Duration,
 };
 
 const DOWNLOAD_CHUNK_SIZE: usize = 1024 * 1024;
+const DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+const DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Default)]
 pub struct WindowsModelStore {
@@ -236,6 +239,18 @@ fn download_descriptor(
     paths: &NativeCorePaths,
     downloads: Arc<Mutex<HashMap<String, DownloadProgress>>>,
 ) -> anyhow::Result<()> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("failed to create download runtime")?
+        .block_on(download_descriptor_async(descriptor, paths, downloads))
+}
+
+async fn download_descriptor_async(
+    descriptor: &ModelDescriptor,
+    paths: &NativeCorePaths,
+    downloads: Arc<Mutex<HashMap<String, DownloadProgress>>>,
+) -> anyhow::Result<()> {
     let output_path = model_path(descriptor, paths)?;
     let temp_path = temp_model_path(descriptor, paths)?;
     fs::create_dir_all(
@@ -246,13 +261,16 @@ fn download_descriptor(
     remove_if_exists(&temp_path)?;
 
     let url = download_url(descriptor)?;
-    let client = reqwest::blocking::Client::builder()
-        .user_agent("Parrot Windows QA")
+    let client = reqwest::Client::builder()
+        .user_agent("Parrot/0.2.0 Windows")
+        .connect_timeout(DOWNLOAD_CONNECT_TIMEOUT)
+        .read_timeout(DOWNLOAD_READ_TIMEOUT)
         .build()
         .context("failed to create download client")?;
     let mut response = client
         .get(&url)
         .send()
+        .await
         .with_context(|| format!("failed to download {url}"))?
         .error_for_status()
         .with_context(|| format!("model download failed: {url}"))?;
@@ -266,17 +284,16 @@ fn download_descriptor(
     let mut file = File::create(&temp_path)
         .with_context(|| format!("failed to create {}", temp_path.display()))?;
     let mut downloaded = 0_i64;
-    let mut buffer = vec![0; DOWNLOAD_CHUNK_SIZE];
     loop {
-        let read = response
-            .read(&mut buffer)
+        let chunk = response
+            .chunk()
+            .await
             .with_context(|| format!("failed to read {url}"))?;
-        if read == 0 {
-            break;
-        }
-        file.write_all(&buffer[..read])
+        let Some(chunk) = chunk else { break };
+
+        file.write_all(&chunk)
             .with_context(|| format!("failed to write {}", temp_path.display()))?;
-        downloaded = downloaded.saturating_add(read as i64);
+        downloaded = downloaded.saturating_add(chunk.len() as i64);
         update_download_progress(&downloads, descriptor, downloaded, total_bytes);
     }
     file.flush()
@@ -331,7 +348,7 @@ fn download_url(descriptor: &ModelDescriptor) -> anyhow::Result<String> {
         .as_deref()
         .ok_or_else(|| anyhow!("model `{}` is missing a file name", descriptor.public_id))?;
     Ok(format!(
-        "https://huggingface.co/{repo_id}/resolve/main/{file_name}"
+        "https://huggingface.co/{repo_id}/resolve/main/{file_name}?download=true"
     ))
 }
 

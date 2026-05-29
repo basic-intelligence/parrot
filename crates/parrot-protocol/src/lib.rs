@@ -152,6 +152,13 @@ impl ShortcutSettings {
             .as_deref()
             .unwrap_or_default()
     }
+
+    pub fn linux_key_codes(&self) -> &[u32] {
+        self.platform_codes
+            .linux_key_codes
+            .as_deref()
+            .unwrap_or_default()
+    }
 }
 
 pub fn default_shortcut_enabled() -> bool {
@@ -287,6 +294,42 @@ pub fn default_windows_hands_free_shortcut() -> ShortcutSettings {
     }
 }
 
+pub fn default_linux_push_to_talk_shortcut() -> ShortcutSettings {
+    ShortcutSettings {
+        display_name: "F9".into(),
+        mode: ShortcutMode::Hold,
+        enabled: true,
+        double_tap_toggle: false,
+        chord: Some(ShortcutChord {
+            modifiers: vec![],
+            key: Some(ShortcutKey::Function(9)),
+        }),
+        platform_codes: ShortcutPlatformCodes {
+            macos_key_codes: None,
+            windows_virtual_keys: None,
+            linux_key_codes: Some(vec![0xffc6]),
+        },
+    }
+}
+
+pub fn default_linux_hands_free_shortcut() -> ShortcutSettings {
+    ShortcutSettings {
+        display_name: "Ctrl + Space".into(),
+        mode: ShortcutMode::Toggle,
+        enabled: true,
+        double_tap_toggle: false,
+        chord: Some(ShortcutChord {
+            modifiers: vec![ShortcutModifier::Control],
+            key: Some(ShortcutKey::Space),
+        }),
+        platform_codes: ShortcutPlatformCodes {
+            macos_key_codes: None,
+            windows_virtual_keys: None,
+            linux_key_codes: Some(vec![0xffe3, 0x20]),
+        },
+    }
+}
+
 pub fn default_cleanup_model_id() -> String {
     DEFAULT_CLEANUP_MODEL_ID.to_string()
 }
@@ -388,6 +431,17 @@ pub enum PermissionKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub enum LinuxHotkeyBackendKind {
+    X11,
+    Compositor,
+    Portal,
+    Evdev,
+    NeedsSetup,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct PermissionRequirement {
     pub kind: PermissionKind,
     pub title: String,
@@ -413,6 +467,8 @@ pub struct PermissionSnapshot {
     pub input_monitoring: Option<PermissionState>,
     #[serde(default)]
     pub all_granted: Option<bool>,
+    #[serde(default)]
+    pub linux_hotkey_backend: Option<LinuxHotkeyBackendKind>,
 }
 
 impl Default for PermissionSnapshot {
@@ -424,6 +480,7 @@ impl Default for PermissionSnapshot {
             accessibility: Some(PermissionState::Unknown),
             input_monitoring: Some(PermissionState::Unknown),
             all_granted: Some(false),
+            linux_hotkey_backend: None,
         }
     }
 }
@@ -568,6 +625,10 @@ pub enum NativeCoreMethod {
     StartHotkeyMonitor,
     StopHotkeyMonitor,
     CaptureShortcut,
+    StartHotkeyRecording,
+    StopHotkeyRecording,
+    ToggleHotkeyRecording,
+    CancelHotkeyRecording,
 }
 
 pub const NATIVE_CORE_EVENT_RECORDING_STARTED: &str = "parrot:recording-started";
@@ -607,6 +668,10 @@ impl NativeCoreMethod {
             Self::StartHotkeyMonitor => "startHotkeyMonitor",
             Self::StopHotkeyMonitor => "stopHotkeyMonitor",
             Self::CaptureShortcut => "captureShortcut",
+            Self::StartHotkeyRecording => "startHotkeyRecording",
+            Self::StopHotkeyRecording => "stopHotkeyRecording",
+            Self::ToggleHotkeyRecording => "toggleHotkeyRecording",
+            Self::CancelHotkeyRecording => "cancelHotkeyRecording",
         }
     }
 }
@@ -648,7 +713,7 @@ pub enum SoundEvent {
 mod tests {
     use super::*;
 
-    fn all_native_core_methods() -> [(NativeCoreMethod, &'static str); 14] {
+    fn all_native_core_methods() -> [(NativeCoreMethod, &'static str); 18] {
         [
             (NativeCoreMethod::Initialize, "initialize"),
             (NativeCoreMethod::PermissionStatuses, "permissionStatuses"),
@@ -664,6 +729,19 @@ mod tests {
             (NativeCoreMethod::StartHotkeyMonitor, "startHotkeyMonitor"),
             (NativeCoreMethod::StopHotkeyMonitor, "stopHotkeyMonitor"),
             (NativeCoreMethod::CaptureShortcut, "captureShortcut"),
+            (
+                NativeCoreMethod::StartHotkeyRecording,
+                "startHotkeyRecording",
+            ),
+            (NativeCoreMethod::StopHotkeyRecording, "stopHotkeyRecording"),
+            (
+                NativeCoreMethod::ToggleHotkeyRecording,
+                "toggleHotkeyRecording",
+            ),
+            (
+                NativeCoreMethod::CancelHotkeyRecording,
+                "cancelHotkeyRecording",
+            ),
         ]
     }
 
@@ -800,6 +878,7 @@ mod tests {
             accessibility: None,
             input_monitoring: None,
             all_granted: Some(true),
+            linux_hotkey_backend: None,
         };
 
         let value = serde_json::to_value(&snapshot).unwrap();
@@ -846,6 +925,21 @@ mod tests {
 
         let decoded: ShortcutSettings = serde_json::from_value(hands_free_value).unwrap();
         assert_eq!(decoded, hands_free);
+    }
+
+    #[test]
+    fn linux_hands_free_default_is_ctrl_space() {
+        let hands_free = default_linux_hands_free_shortcut();
+
+        assert_eq!(hands_free.display_name, "Ctrl + Space");
+        assert_eq!(hands_free.linux_key_codes(), &[0xffe3, 0x20]);
+        assert_eq!(
+            hands_free.chord,
+            Some(ShortcutChord {
+                modifiers: vec![ShortcutModifier::Control],
+                key: Some(ShortcutKey::Space),
+            })
+        );
     }
 
     #[test]

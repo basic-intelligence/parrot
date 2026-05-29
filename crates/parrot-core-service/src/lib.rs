@@ -16,7 +16,9 @@ use parrot_protocol::{
     NATIVE_CORE_EVENT_RECORDING_FINISHED, NATIVE_CORE_EVENT_RECORDING_PROCESSING,
     NATIVE_CORE_EVENT_RECORDING_STARTED,
 };
-use parrot_settings::{normalize_settings, DEFAULT_CLEANUP_MODEL_ID};
+use parrot_settings::{
+    normalize_settings_for_platform, SettingsPlatform, DEFAULT_CLEANUP_MODEL_ID,
+};
 use serde_json::json;
 
 #[derive(Debug, Clone)]
@@ -34,6 +36,16 @@ pub enum ShortcutTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PasteTarget {
     pub platform_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum HotkeyStopRecording {
+    Idle,
+    Busy(NativeCoreEvent),
+    Started {
+        event: NativeCoreEvent,
+        paste_target: Option<PasteTarget>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -108,12 +120,13 @@ pub struct CoreService<A: PlatformAdapter, M: ModelPipeline> {
     cleanup_default_instructions: String,
     debug_cleanup_failures: bool,
     hotkey_recording: bool,
+    hotkey_processing: bool,
     paste_target: Option<PasteTarget>,
 }
 
 impl<A: PlatformAdapter, M: ModelPipeline> CoreService<A, M> {
     pub fn new(adapter: A, models: M, mut config: CoreServiceConfig) -> Self {
-        normalize_settings(&mut config.settings);
+        normalize_settings_for_platform(&mut config.settings, settings_platform(config.platform));
         Self {
             adapter,
             models,
@@ -123,6 +136,7 @@ impl<A: PlatformAdapter, M: ModelPipeline> CoreService<A, M> {
             cleanup_default_instructions: config.cleanup_default_instructions,
             debug_cleanup_failures: config.debug_cleanup_failures,
             hotkey_recording: false,
+            hotkey_processing: false,
             paste_target: None,
         }
     }
@@ -131,8 +145,16 @@ impl<A: PlatformAdapter, M: ModelPipeline> CoreService<A, M> {
         &self.settings
     }
 
+    pub fn hotkey_recording_active(&self) -> bool {
+        self.hotkey_recording
+    }
+
+    pub fn hotkey_recording_processing(&self) -> bool {
+        self.hotkey_processing
+    }
+
     pub fn update_settings(&mut self, mut settings: AppSettings) -> AppSettings {
-        normalize_settings(&mut settings);
+        normalize_settings_for_platform(&mut settings, settings_platform(self.platform));
         self.settings = settings.clone();
         settings
     }
@@ -239,7 +261,21 @@ impl<A: PlatformAdapter, M: ModelPipeline> CoreService<A, M> {
     }
 
     pub async fn start_hotkey_recording(&mut self) -> NativeCoreEvent {
-        self.paste_target = if self.settings.paste_into_recording_start_window {
+        if self.hotkey_recording {
+            return event(
+                NATIVE_CORE_EVENT_RECORDING_STARTED,
+                json!({ "kind": "dictation", "busy": true }),
+            );
+        }
+
+        if self.hotkey_processing {
+            return event(
+                NATIVE_CORE_EVENT_RECORDING_PROCESSING,
+                json!({ "kind": "dictation", "busy": true }),
+            );
+        }
+
+        self.paste_target = if self.should_capture_hotkey_paste_target() {
             self.adapter.capture_paste_target().await.ok().flatten()
         } else {
             None
@@ -256,6 +292,7 @@ impl<A: PlatformAdapter, M: ModelPipeline> CoreService<A, M> {
             Err(error) => {
                 self.paste_target = None;
                 self.hotkey_recording = false;
+                self.hotkey_processing = false;
                 self.adapter
                     .play_sound(SoundEvent::RecordingError, self.settings.play_sounds);
                 event(
@@ -267,18 +304,50 @@ impl<A: PlatformAdapter, M: ModelPipeline> CoreService<A, M> {
     }
 
     pub async fn stop_hotkey_recording(&mut self) -> Vec<NativeCoreEvent> {
+        match self.begin_stop_hotkey_recording() {
+            HotkeyStopRecording::Idle => Vec::new(),
+            HotkeyStopRecording::Busy(event) => vec![event],
+            HotkeyStopRecording::Started {
+                event,
+                paste_target,
+            } => {
+                let mut events = vec![event];
+                events.push(self.finish_stopped_hotkey_recording(paste_target).await);
+                events
+            }
+        }
+    }
+
+    pub fn begin_stop_hotkey_recording(&mut self) -> HotkeyStopRecording {
+        if self.hotkey_processing {
+            return HotkeyStopRecording::Busy(event(
+                NATIVE_CORE_EVENT_RECORDING_PROCESSING,
+                json!({ "kind": "dictation", "busy": true }),
+            ));
+        }
+
         if !self.hotkey_recording {
-            return Vec::new();
+            return HotkeyStopRecording::Idle;
         }
 
         self.hotkey_recording = false;
+        self.hotkey_processing = true;
         let paste_target = self.paste_target.take();
-        let mut events = vec![event(
-            NATIVE_CORE_EVENT_RECORDING_PROCESSING,
-            json!({ "kind": "dictation" }),
-        )];
 
-        match self.finish_recording().await {
+        HotkeyStopRecording::Started {
+            event: event(
+                NATIVE_CORE_EVENT_RECORDING_PROCESSING,
+                json!({ "kind": "dictation" }),
+            ),
+            paste_target,
+        }
+    }
+
+    pub async fn finish_stopped_hotkey_recording(
+        &mut self,
+        paste_target: Option<PasteTarget>,
+    ) -> NativeCoreEvent {
+        let event = match self.finish_recording().await {
             Ok(result) => {
                 let paste_error = self
                     .paste_recording_result(&result, paste_target.as_ref())
@@ -296,19 +365,20 @@ impl<A: PlatformAdapter, M: ModelPipeline> CoreService<A, M> {
                 if let Some(error) = paste_error {
                     payload["pasteError"] = json!(error);
                 }
-                events.push(event(NATIVE_CORE_EVENT_RECORDING_FINISHED, payload));
+                event(NATIVE_CORE_EVENT_RECORDING_FINISHED, payload)
             }
             Err(error) => {
                 self.adapter
                     .play_sound(SoundEvent::RecordingError, self.settings.play_sounds);
-                events.push(event(
+                event(
                     NATIVE_CORE_EVENT_RECORDING_FAILED,
                     json!({ "error": error.to_string() }),
-                ));
+                )
             }
-        }
+        };
 
-        events
+        self.hotkey_processing = false;
+        event
     }
 
     pub async fn cancel_hotkey_recording(&mut self) -> NativeCoreEvent {
@@ -316,19 +386,13 @@ impl<A: PlatformAdapter, M: ModelPipeline> CoreService<A, M> {
             let _ = self.adapter.stop_audio_recording().await;
         }
         self.hotkey_recording = false;
+        self.hotkey_processing = false;
         self.paste_target = None;
         self.adapter
             .play_sound(SoundEvent::RecordingCancel, self.settings.play_sounds);
         event(
             NATIVE_CORE_EVENT_RECORDING_CANCELLED,
             json!({ "kind": "dictation" }),
-        )
-    }
-
-    pub fn hotkey_monitor_failed(message: impl Into<String>) -> NativeCoreEvent {
-        event(
-            NATIVE_CORE_EVENT_HOTKEY_MONITOR_FAILED,
-            json!({ "error": message.into() }),
         )
     }
 
@@ -458,6 +522,10 @@ impl<A: PlatformAdapter, M: ModelPipeline> CoreService<A, M> {
             .map(|error| error.to_string())
     }
 
+    fn should_capture_hotkey_paste_target(&self) -> bool {
+        self.settings.paste_into_recording_start_window || matches!(self.platform, Platform::Linux)
+    }
+
     async fn require_downloaded(&self, descriptor: &ModelDescriptor) -> anyhow::Result<()> {
         let state = self.models.model_state(descriptor).await?;
         if state.downloading {
@@ -497,6 +565,13 @@ impl<A: PlatformAdapter, M: ModelPipeline> CoreService<A, M> {
             self.architecture,
         )
     }
+
+    pub fn hotkey_monitor_failed(message: impl Into<String>) -> NativeCoreEvent {
+        event(
+            NATIVE_CORE_EVENT_HOTKEY_MONITOR_FAILED,
+            json!({ "error": message.into() }),
+        )
+    }
 }
 
 fn event(name: &str, payload: serde_json::Value) -> NativeCoreEvent {
@@ -510,6 +585,14 @@ fn duration_seconds(audio: &RecordedAudio) -> f64 {
     let sample_rate = audio.sample_rate_hz.max(1) as f64;
     let channels = audio.channels.max(1) as f64;
     audio.samples.len() as f64 / sample_rate / channels
+}
+
+fn settings_platform(platform: Platform) -> SettingsPlatform {
+    match platform {
+        Platform::Macos => SettingsPlatform::Macos,
+        Platform::Windows => SettingsPlatform::Windows,
+        Platform::Linux => SettingsPlatform::Linux,
+    }
 }
 
 pub const MACOS_PLATFORM_ADAPTER_FILES: &[(&str, &str)] = &[
@@ -543,6 +626,7 @@ mod tests {
         started: bool,
         stopped_count: usize,
         paste_target: Option<PasteTarget>,
+        last_paste_target: Option<PasteTarget>,
         focused_context: Option<String>,
         pasted_text: Option<String>,
         paste_error: Option<String>,
@@ -560,6 +644,7 @@ mod tests {
                 started: false,
                 stopped_count: 0,
                 paste_target: None,
+                last_paste_target: None,
                 focused_context: None,
                 pasted_text: None,
                 paste_error: None,
@@ -593,12 +678,20 @@ mod tests {
         }
 
         async fn start_audio_recording(&self, _input_uid: Option<&str>) -> anyhow::Result<()> {
-            self.state.lock().unwrap().started = true;
+            let mut state = self.state.lock().unwrap();
+            if state.started {
+                return Err(anyhow::anyhow!("audio recording is already active"));
+            }
+            state.started = true;
             Ok(())
         }
 
         async fn stop_audio_recording(&self) -> anyhow::Result<RecordedAudio> {
             let mut state = self.state.lock().unwrap();
+            if !state.started {
+                return Err(anyhow::anyhow!("audio recording is not active"));
+            }
+            state.started = false;
             state.stopped_count += 1;
             Ok(state.audio.clone())
         }
@@ -645,15 +738,12 @@ mod tests {
             Ok(self.state.lock().unwrap().focused_context.clone())
         }
 
-        async fn paste_text(
-            &self,
-            text: &str,
-            _target: Option<&PasteTarget>,
-        ) -> anyhow::Result<()> {
+        async fn paste_text(&self, text: &str, target: Option<&PasteTarget>) -> anyhow::Result<()> {
             let mut state = self.state.lock().unwrap();
             if let Some(error) = state.paste_error.clone() {
                 return Err(anyhow::anyhow!(error));
             }
+            state.last_paste_target = target.cloned();
             state.pasted_text = Some(text.to_string());
             Ok(())
         }
@@ -805,12 +895,20 @@ mod tests {
         adapter: FakeAdapter,
         models: FakePipeline,
     ) -> CoreService<FakeAdapter, FakePipeline> {
+        service_for_platform(adapter, models, Platform::Macos)
+    }
+
+    fn service_for_platform(
+        adapter: FakeAdapter,
+        models: FakePipeline,
+        platform: Platform,
+    ) -> CoreService<FakeAdapter, FakePipeline> {
         CoreService::new(
             adapter,
             models,
             CoreServiceConfig {
                 settings: AppSettings::default(),
-                platform: Platform::Macos,
+                platform,
                 architecture: Architecture::Intel,
                 cleanup_default_instructions: "Clean it.".into(),
                 debug_cleanup_failures: false,
@@ -879,6 +977,75 @@ mod tests {
             adapter.state.lock().unwrap().pasted_text.as_deref(),
             Some(" Hello, world.")
         );
+    }
+
+    #[tokio::test]
+    async fn linux_hotkey_recording_captures_paste_target_by_default() {
+        let adapter = FakeAdapter::new(speech_audio());
+        let models = FakePipeline::downloaded();
+        let mut service = service_for_platform(adapter.clone(), models, Platform::Linux);
+
+        let started = service.start_hotkey_recording().await;
+        let events = service.stop_hotkey_recording().await;
+
+        assert_eq!(started.event, NATIVE_CORE_EVENT_RECORDING_STARTED);
+        assert_eq!(events[1].event, NATIVE_CORE_EVENT_RECORDING_FINISHED);
+        assert_eq!(
+            adapter.state.lock().unwrap().pasted_text.as_deref(),
+            Some("Hello, world.")
+        );
+        assert_eq!(
+            adapter.state.lock().unwrap().last_paste_target,
+            Some(PasteTarget {
+                platform_id: "window-1".into()
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn duplicate_hotkey_start_keeps_active_recording_state() {
+        let adapter = FakeAdapter::new(speech_audio());
+        let models = FakePipeline::downloaded();
+        let mut service = service(adapter.clone(), models);
+
+        let started = service.start_hotkey_recording().await;
+        let duplicate = service.start_hotkey_recording().await;
+        let events = service.stop_hotkey_recording().await;
+
+        assert_eq!(started.event, NATIVE_CORE_EVENT_RECORDING_STARTED);
+        assert_eq!(duplicate.event, NATIVE_CORE_EVENT_RECORDING_STARTED);
+        assert_eq!(duplicate.payload["busy"], true);
+        assert_eq!(events[0].event, NATIVE_CORE_EVENT_RECORDING_PROCESSING);
+        assert_eq!(events[1].event, NATIVE_CORE_EVENT_RECORDING_FINISHED);
+        assert_eq!(adapter.state.lock().unwrap().stopped_count, 1);
+    }
+
+    #[tokio::test]
+    async fn split_hotkey_stop_marks_processing_before_transcription() {
+        let adapter = FakeAdapter::new(speech_audio());
+        let models = FakePipeline::downloaded();
+        let mut service = service(adapter.clone(), models);
+
+        let _ = service.start_hotkey_recording().await;
+        let stop = service.begin_stop_hotkey_recording();
+
+        let paste_target = match stop {
+            HotkeyStopRecording::Started {
+                event,
+                paste_target,
+            } => {
+                assert_eq!(event.event, NATIVE_CORE_EVENT_RECORDING_PROCESSING);
+                paste_target
+            }
+            other => panic!("expected stop to start processing, got {other:?}"),
+        };
+        assert!(!service.hotkey_recording_active());
+        assert!(service.hotkey_recording_processing());
+
+        let finished = service.finish_stopped_hotkey_recording(paste_target).await;
+        assert_eq!(finished.event, NATIVE_CORE_EVENT_RECORDING_FINISHED);
+        assert!(!service.hotkey_recording_processing());
+        assert_eq!(adapter.state.lock().unwrap().stopped_count, 1);
     }
 
     #[tokio::test]

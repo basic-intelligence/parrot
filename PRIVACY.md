@@ -1,6 +1,6 @@
 # Privacy Notice
 
-Last updated: May 19, 2026
+Last updated: May 24, 2026
 
 Parrot is designed to be a local-first dictation app. This notice explains what Parrot does with audio, transcripts, settings, model downloads, update checks, and permissions.
 
@@ -42,13 +42,15 @@ The local models do not train on, learn from, or upload your dictated content.
 
 ## Clipboard and paste behavior
 
-To paste text into the app you were using, Parrot temporarily places the dictated text on the system clipboard and sends a paste command. On Windows, this uses the clipboard plus Ctrl+V through `SendInput`. Parrot then attempts to restore the previous clipboard contents shortly afterward.
+To paste text into the app you were using, Parrot temporarily places the dictated text on the system clipboard and sends a paste command. On Windows, this uses the clipboard plus Ctrl+V through `SendInput`. On Linux X11, this uses the clipboard plus `xdotool` to send Ctrl+V. Parrot then attempts to restore the previous clipboard contents shortly afterward.
 
 Other apps, clipboard managers, or system tools that monitor the clipboard may be able to see or store the dictated text while it is on the clipboard. This is outside Parrot's control.
 
-Parrot may read a short amount of text immediately before the cursor in the target app to improve spacing and capitalization when pasting. On Windows, this uses UI Automation text patterns when the focused app exposes them. This context is used in memory for formatting and is not saved or sent to Parrot servers.
+Parrot may read a short amount of text immediately before the cursor in the target app to improve spacing and capitalization when pasting. On Windows, this uses UI Automation text patterns when the focused app exposes them. Linux does not read focused text context in the first release. This context is used in memory for formatting and is not saved or sent to Parrot servers.
 
 On Windows, paste into elevated/admin apps can fail because normal user apps cannot inject input into higher-integrity apps. Parrot reports that as a paste failure instead of silently retrying with elevated privileges.
+
+On Linux Wayland, automatic paste and global shortcut support are not implemented in the first Linux release. Parrot reports this limitation instead of attempting unsupported input injection.
 
 ## Local storage
 
@@ -58,6 +60,7 @@ Parrot stores app data locally on your device. Depending on how the app is insta
 - `~/Library/Application Support/Parrot/` for downloaded speech and cleanup models.
 - `%APPDATA%\in.basic.parrot\` for Windows settings and history.
 - `%LOCALAPPDATA%\Parrot\Models\` for Windows speech and cleanup models.
+- The system XDG data directory, commonly `~/.local/share/in.basic.parrot/`, for Linux settings, history, speech models, and cleanup models.
 
 Downloaded models remain on disk until you delete them in Parrot or remove the model files manually.
 
@@ -72,6 +75,8 @@ On macOS, Parrot asks for permissions only to provide dictation features:
 Parrot uses shortcut and keyboard events to detect configured shortcuts and cancellation. Parrot does not use these permissions to build a keylogger or store general keystroke history.
 
 On Windows, Parrot requires microphone access. If capture is blocked, check Windows privacy settings, including **Microphone access**, **Let apps access your microphone**, and **Let desktop apps access your microphone**. Windows shortcuts and paste do not have separate permission prompts, but Parrot uses a low-level keyboard hook for your configured shortcuts, UI Automation for bounded focused-text context when available, the clipboard for paste, and `SendInput` to send Ctrl+V.
+
+On Linux, Parrot requires access to a working microphone input device. X11 shortcut and paste support use global key observation for your configured shortcuts, the clipboard for paste, and `xdotool` to send Ctrl+V. Linux does not have a single native permission dialog for these features; Parrot reports whether the current session appears supported.
 
 ## Network requests
 
@@ -103,6 +108,7 @@ You can control Parrot data in these ways:
 - Delete downloaded models from the Local models section.
 - Revoke macOS permissions in System Settings.
 - Revoke Windows microphone access in Windows privacy settings.
+- Remove Linux microphone access or helper packages through your desktop environment or package manager.
 - Uninstall Parrot and remove its local Application Support data if you want to remove local app data manually.
 
 ## Maintainer access

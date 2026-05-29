@@ -7,6 +7,70 @@ on:
       - main
 
 jobs:
+  linux:
+    name: Linux
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libpulse-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            cmake \
+            pkg-config
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Linux sidecar
+        run: npm run build:core:linux
+
+      - name: Verify Tauri Linux sidecar exists
+        run: |
+          sidecar="src-tauri/binaries/parrot-core-cpu-x86_64-unknown-linux-gnu"
+          test -x "$sidecar"
+
+      - name: Run Rust workspace tests
+        run: cargo test --workspace
+
+      - name: Run Linux sidecar tests
+        run: cargo test --manifest-path native-core/linux/Cargo.toml
+
+      - name: Build frontend
+        run: npm run build:ui
+
+      - name: Build Linux app
+        run: npm run build:linux:qa
+
+      - name: Verify Linux bundle artifacts
+        run: |
+          bundle_dir="src-tauri/target/x86_64-unknown-linux-gnu/release/bundle"
+          find "$bundle_dir" -type f -name "*.AppImage" -print -quit | grep -q .
+          find "$bundle_dir" -type f -name "*.deb" -print -quit | grep -q .
+
   windows:
     name: Windows
     runs-on: windows-latest

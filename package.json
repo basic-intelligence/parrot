@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "tauri dev",
     "dev:ui": "vite --host 127.0.0.1 --port 1420",
+    "typecheck": "tsc --noEmit",
     "before:dev": "node scripts/before-tauri-dev.mjs",
     "before:build": "node scripts/before-tauri-build.mjs",
     "build": "tauri build",
@@ -12,7 +13,10 @@
     "build:ui": "vite build",
     "tauri": "tauri",
     "build:core:mac": "./scripts/build-native-core-macos.sh",
+    "build:core:linux": "./scripts/build-native-core-linux.sh",
     "build:core:windows": "powershell -ExecutionPolicy Bypass -File scripts/build-native-core-windows.ps1",
+    "build:linux": "tauri build --target x86_64-unknown-linux-gnu --config src-tauri/tauri.linux.conf.json",
+    "build:linux:qa": "tauri build --target x86_64-unknown-linux-gnu --config src-tauri/tauri.linux.qa.conf.json",
     "build:windows": "tauri build --target x86_64-pc-windows-msvc",
     "build:windows:cpu": "tauri build --target x86_64-pc-windows-msvc",
     "build:windows:qa": "powershell -ExecutionPolicy Bypass -Command \"$env:PARROT_WINDOWS_CORE_VARIANTS='cpu,cuda'; npm run tauri -- build --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.qa.conf.json\""

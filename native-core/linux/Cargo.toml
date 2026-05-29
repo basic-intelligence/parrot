@@ -1,0 +1,44 @@
+[package]
+name = "parrot-core-linux"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+
+[[bin]]
+name = "parrot-core"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+arboard = "3"
+ashpd = "0.12.3"
+cpal = "0.15"
+futures-util = "0.3"
+hound = "3"
+llama-cpp-2 = { version = "0.1.146", default-features = false, features = ["dynamic-link"] }
+llama-cpp-sys-2 = { version = "0.1.146", default-features = false, features = ["dynamic-link"] }
+parrot-audio = { path = "../../crates/parrot-audio" }
+parrot-cleanup = { path = "../../crates/parrot-cleanup" }
+parrot-core-service = { path = "../../crates/parrot-core-service" }
+parrot-language = { path = "../../crates/parrot-language" }
+parrot-models = { path = "../../crates/parrot-models" }
+parrot-paste = { path = "../../crates/parrot-paste" }
+parrot-prompts = { path = "../../crates/parrot-prompts" }
+parrot-protocol = { path = "../../crates/parrot-protocol" }
+parrot-settings = { path = "../../crates/parrot-settings" }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+whisper-rs = { version = "0.16.0", default-features = false }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev = "0.13"
+libpulse-binding = "2"
+libpulse-simple-binding = "2"
+x11rb = "0.13"
+
+[dev-dependencies]
+tempfile = "3"

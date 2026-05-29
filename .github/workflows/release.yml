@@ -88,6 +88,7 @@ jobs:
 
             - macOS: download the `.dmg`
             - Windows: download the `-setup.exe` installer
+            - Linux: download the `.AppImage` or `.deb`
 
             Existing users can update from inside Parrot.
           releaseDraft: true
@@ -171,6 +172,7 @@ jobs:
 
             - macOS: download the `.dmg`
             - Windows: download the `-setup.exe` installer
+            - Linux: download the `.AppImage` or `.deb`
 
             Existing users can update from inside Parrot.
           releaseDraft: true
@@ -183,3 +185,89 @@ jobs:
 
       - name: Verify Windows Authenticode signatures
         run: powershell -ExecutionPolicy Bypass -File scripts/verify-windows-signatures.ps1
+
+  release-linux:
+    permissions:
+      contents: write
+
+    runs-on: ubuntu-22.04
+    needs: release-windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libpulse-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            cmake \
+            pkg-config
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Linux release config
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+
+          const config = JSON.parse(fs.readFileSync("src-tauri/tauri.linux.conf.json", "utf8"));
+          if (!process.env.TAURI_SIGNING_PRIVATE_KEY) {
+            config.bundle = {
+              ...config.bundle,
+              createUpdaterArtifacts: false,
+            };
+          }
+          fs.writeFileSync(
+            "src-tauri/tauri.linux.release.generated.json",
+            `${JSON.stringify(config, null, 2)}\n`,
+          );
+          NODE
+
+      - name: Build and upload Tauri release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "Parrot v__VERSION__"
+          releaseBody: |
+            Download the installer for your platform below.
+
+            - macOS: download the `.dmg`
+            - Windows: download the `-setup.exe` installer
+            - Linux: download the `.AppImage` or `.deb`
+
+            Existing users can update from inside Parrot.
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+          retryAttempts: 3
+          assetNamePattern: "Parrot-[platform]-[arch][setup][ext]"
+          args: --target x86_64-unknown-linux-gnu --config src-tauri/tauri.linux.release.generated.json

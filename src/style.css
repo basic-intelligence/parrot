@@ -350,7 +350,7 @@ h3 {
   position: relative;
   z-index: 3;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--setup-step-count, 3), minmax(0, 1fr));
   gap: 8px;
   padding-top: 2px;
   margin-bottom: 18px;
@@ -1386,6 +1386,33 @@ button.general-model-card-main:hover:not(:disabled) {
   gap: 12px;
 }
 
+.linux-shortcut-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  background: var(--panel-2);
+  border: 1px solid rgba(255, 255, 255, .06);
+  border-radius: 8px;
+}
+
+.linux-shortcut-status h4 {
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.linux-shortcut-status p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.linux-shortcut-status .hint + .hint {
+  margin-top: 4px;
+}
+
 .shortcut-setting-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(290px, 340px);
@@ -1442,6 +1469,11 @@ button.general-model-card-main:hover:not(:disabled) {
 .shortcut-recorder.capturing {
   border-color: rgba(125, 74, 245, .62);
   box-shadow: 0 0 18px rgba(125, 74, 245, .1), inset 3px 0 0 var(--green);
+  cursor: progress;
+}
+
+.shortcut-recorder.capturing .shortcut-display {
+  cursor: progress;
 }
 
 .shortcut-recorder-label {
@@ -1493,6 +1525,35 @@ button.general-model-card-main:hover:not(:disabled) {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.linux-shortcut-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.linux-shortcut-modifiers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.compact-check {
+  min-height: 34px;
+  padding: 7px 9px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.linux-shortcut-picker-row {
+  display: grid;
+  grid-template-columns: minmax(84px, 1fr) auto;
+  gap: 8px;
+}
+
+.linux-shortcut-picker-row button {
+  min-height: 40px;
 }
 
 .keycap {
@@ -2089,6 +2150,10 @@ button.copy-history.copied {
   }
 
   .shortcut-setting-row {
+    grid-template-columns: 1fr;
+  }
+
+  .linux-shortcut-status {
     grid-template-columns: 1fr;
   }
 

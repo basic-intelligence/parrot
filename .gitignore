@@ -87,4 +87,4 @@ temp/
 # Dev help
 scripts/parrot-dev.sh
 scripts/parrot-diagnostics-macos.sh
-GOAL.md
+TODO.md

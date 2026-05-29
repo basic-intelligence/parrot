@@ -51,6 +51,31 @@ and non-blocking sound playback through the `windows` and `windows-sys` crates.
 The configured WebView2 mode embeds Microsoft's online bootstrapper, not a fixed
 offline runtime.
 
+## Bundled or Linked in the Linux App
+
+Linux release artifacts bundle or link the components below.
+
+| Component            | License           | Source                                  |
+| -------------------- | ----------------- | --------------------------------------- |
+| Tauri                | MIT OR Apache-2.0 | https://github.com/tauri-apps/tauri     |
+| whisper.cpp          | MIT               | https://github.com/ggml-org/whisper.cpp |
+| whisper-rs           | Unlicense         | https://codeberg.org/tazz4843/whisper-rs |
+| llama.cpp            | MIT               | https://github.com/ggml-org/llama.cpp   |
+| llama_cpp Rust crate | MIT OR Apache-2.0 | https://github.com/edgenai/llama_cpp-rs |
+| cpal                 | Apache-2.0        | https://github.com/RustAudio/cpal       |
+| arboard              | MIT OR Apache-2.0 | https://github.com/1Password/arboard    |
+| x11rb                | MIT OR Apache-2.0 | https://github.com/psychon/x11rb        |
+| evdev                | Apache-2.0 OR MIT | https://github.com/emberian/evdev       |
+| xdotool              | BSD-3-Clause      | https://github.com/jordansissel/xdotool |
+| reqwest              | MIT OR Apache-2.0 | https://github.com/seanmonstar/reqwest  |
+| sha2                 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes    |
+
+The Linux sidecar uses CPAL for microphone capture, X11 grabs, XDG desktop
+portal shortcuts, evdev fallback shortcut detection, arboard and wl-clipboard
+for clipboard access, and `xdotool` for X11 paste injection. On Wayland, Parrot
+may call optional runtime helpers when already installed by the user:
+`hyprctl`, `wtype`, `dotool`, and `ydotool`. These helpers are not bundled.
+
 ### Tauri Plugins and Direct Rust Crates
 
 | Component                    | License            | Source                                            |
@@ -114,6 +139,10 @@ offline runtime.
 - Qwen3.5-2B-GGUF: Copyright Alibaba Cloud.
 - Google Gemma 4 E2B Instruct GGUF: Copyright Google.
 - cpal: Copyright remains with upstream contributors.
+- arboard: Copyright remains with upstream contributors.
+- x11rb: Copyright remains with upstream contributors.
+- evdev: Copyright remains with upstream contributors.
+- xdotool: Copyright remains with upstream contributors.
 - windows and windows-sys: Copyright Microsoft Corporation.
 - sha2/RustCrypto hashes: Copyright remains with upstream contributors.
 

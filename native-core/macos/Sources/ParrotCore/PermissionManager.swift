@@ -25,7 +25,7 @@ enum PermissionManager {
                 state: microphone,
                 required: true,
                 requestable: true,
-                opensSettings: true
+                opensSettings: microphone != .notDetermined
             ),
             PermissionRequirementDTO(
                 kind: .accessibility,
@@ -75,20 +75,25 @@ enum PermissionManager {
     static func requestMicrophone(openSettings: Bool = false) async -> PermissionState {
         let current = microphoneStatus()
 
+        if current == .notDetermined {
+            let requested = await withCheckedContinuation { continuation in
+                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                    continuation.resume(returning: granted ? .granted : microphoneStatus())
+                }
+            }
+
+            if openSettings && requested != .granted {
+                openPrivacyPane(anchor: "Privacy_Microphone")
+            }
+
+            return requested
+        }
+
         if openSettings {
             openPrivacyPane(anchor: "Privacy_Microphone")
-            return current
         }
 
-        guard current == .notDetermined else {
-            return current
-        }
-
-        return await withCheckedContinuation { continuation in
-            AVCaptureDevice.requestAccess(for: .audio) { granted in
-                continuation.resume(returning: granted ? .granted : microphoneStatus())
-            }
-        }
+        return current
     }
 
     static func accessibilityStatus() -> PermissionState {

@@ -48,6 +48,7 @@
     "allow-set-launch-at-login",
     "allow-set-update-badge",
     "allow-download-model",
+    "allow-model-statuses",
     "allow-delete-model",
     "allow-warm-models",
     "allow-start-test-dictation",

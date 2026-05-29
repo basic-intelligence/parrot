@@ -7,9 +7,11 @@
 
 Press a shortcut. Say what you want. Parrot turns your voice into clean text and pastes it.
 
-[![Download Parrot for macOS](https://img.shields.io/badge/Download_Parrot_for-macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/basic-intelligence/parrot/releases/latest)
+[![Download for macOS](https://img.shields.io/badge/Download_for-macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/basic-intelligence/parrot/releases/latest)
 
-[![Download Parrot for Windows](https://img.shields.io/badge/Download_Parrot_for-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/basic-intelligence/parrot/releases/latest)
+[![Download for Windows](https://img.shields.io/badge/Download_for-Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/basic-intelligence/parrot/releases/latest)
+
+[![Download for Linux](https://img.shields.io/badge/Download_for-Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/basic-intelligence/parrot/releases/latest)
 
 </div>
 
@@ -17,7 +19,7 @@ Press a shortcut. Say what you want. Parrot turns your voice into clean text and
 
 ## What is Parrot?
 
-Parrot is a local-first dictation app for macOS and Windows. It records your voice, transcribes it locally, cleans up the text, and pastes it into the app you were using.
+Parrot is a local-first dictation app for macOS, Windows, and Linux. It records your voice, transcribes it locally, cleans up the text, and pastes it into the app you were using.
 
 ## Why Parrot?
 
@@ -30,13 +32,14 @@ Parrot is a local-first dictation app for macOS and Windows. It records your voi
 
 ## Comparison
 
-| Feature             | **Parrot** |    **Wispr Flow**    |     **Typeless**     |     **Monologue**     |     **SuperWhisper**     |      **Willow**      |
-| ------------------- | :--------: | :------------------: | :------------------: | :-------------------: | :----------------------: | :------------------: |
-| **Free**            |     ✅     | ⚠️ Limited free tier | ⚠️ Limited free tier | ⚠️ Limited free words |            ✅            | ⚠️ Limited free tier |
-| **Private**         |     ✅     |    ⚠️ Cloud-first    | ⚠️ Cloud processing  |  ⚠️ Cloud processing  |            ✅            | ⚠️ Cloud processing  |
-| **No word limits**  |     ✅     |     ❌ Paid only     |     ❌ Paid only     |     ❌ Paid only      |            ✅            |     ❌ Paid only     |
-| **No subscription** |     ✅     |    ❌ Paid plans     |    ❌ Paid plans     |     ❌ Paid plans     | ⚠️ Paid plans + lifetime |    ❌ Paid plans     |
-| **Open source**     |     ✅     |    ❌ Proprietary    |    ❌ Proprietary    |    ❌ Proprietary     |      ❌ Proprietary      |    ❌ Proprietary    |
+| Feature                   | **Parrot** |    **Wispr Flow**    |     **Typeless**     |     **Monologue**     |     **SuperWhisper**     |      **Willow**      |
+| ------------------------- | :--------: | :------------------: | :------------------: | :-------------------: | :----------------------: | :------------------: |
+| **macOS, Windows, Linux** |     ✅     |  ⚠️ macOS, Windows   |  ⚠️ macOS, Windows   |       ❌ macOS        |    ⚠️ macOS, Windows     |  ⚠️ macOS, Windows   |
+| **Free**                  |     ✅     | ⚠️ Limited free tier | ⚠️ Limited free tier | ⚠️ Limited free words |            ✅            | ⚠️ Limited free tier |
+| **Private**               |     ✅     |    ⚠️ Cloud-first    | ⚠️ Cloud processing  |  ⚠️ Cloud processing  |            ✅            | ⚠️ Cloud processing  |
+| **No word limits**        |     ✅     |     ❌ Paid only     |     ❌ Paid only     |     ❌ Paid only      |            ✅            |     ❌ Paid only     |
+| **No subscription**       |     ✅     |    ❌ Paid plans     |    ❌ Paid plans     |     ❌ Paid plans     | ⚠️ Paid plans + lifetime |    ❌ Paid plans     |
+| **Open source**           |     ✅     |    ❌ Proprietary    |    ❌ Proprietary    |    ❌ Proprietary     |      ❌ Proprietary      |    ❌ Proprietary    |
 
 ## Under the hood
 
@@ -45,12 +48,6 @@ Parrot uses:
 - **WhisperKit** and **whisper.cpp** for speech-to-text.
 - **llama.cpp** with local GGUF models for cleanup and formatting.
 - **Tauri**, **Rust**, **Swift**, and **TypeScript** for the desktop app.
-
-## Roadmap 🗺️
-
-- [x] macOS
-- [x] Windows
-- [ ] Linux
 
 ## Links
 

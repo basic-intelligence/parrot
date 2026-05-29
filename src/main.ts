@@ -15,6 +15,8 @@ import {
   deleteModel,
   downloadModel,
   getAppSnapshot,
+  installLinuxShortcuts,
+  modelStatuses,
   permissionStatuses,
   requestPermission,
   saveRecordingResult,
@@ -45,6 +47,7 @@ import type {
   PermissionState,
   RecordingEvent,
   ShortcutKey,
+  ShortcutModifier,
   ShortcutSettings,
   Snapshot,
 } from "./types";
@@ -53,6 +56,19 @@ import "./style.css";
 type ShortcutSettingKey = "pushToTalkShortcut" | "handsFreeShortcut";
 type ShortcutNotice = {
   level: "info" | "success" | "error";
+  message: string;
+};
+type LinuxShortcutStatus = {
+  backend:
+    | "x11"
+    | "compositor"
+    | "portal"
+    | "evdev"
+    | "needsSetup"
+    | "unsupported";
+  desktop: string;
+  canInstallCompositorShortcuts: boolean;
+  canCaptureInApp: boolean;
   message: string;
 };
 type SettingsNotice = {
@@ -78,6 +94,8 @@ type CleanupModelSelectionNotice = {
 type PermissionRowOptions = {
   hideRefreshWhenGranted?: boolean;
   openSettingsWhenGranted?: boolean;
+  opensSettings?: boolean;
+  requestable?: boolean;
   variant?: "setup" | "settings";
 };
 type UpdateCheckSource = "manual" | "automatic";
@@ -124,12 +142,10 @@ const ICONS: Record<IconName, string> = {
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10"/><path d="M8 10l4 4 4-4"/><path d="M5 19h14"/></svg>',
   delete:
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10"/><path d="M10 7V5h4v2"/><path d="M9 10v7M15 10v7"/><path d="M8 7l1 13h6l1-13"/></svg>',
-  copy:
-    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h10v12H8z"/><path d="M6 16H4V4h10v2"/><path d="M11 12h4M11 16h4"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h10v12H8z"/><path d="M6 16H4V4h10v2"/><path d="M11 12h4M11 16h4"/></svg>',
   check:
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
-  mic:
-    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M8.5 21h7"/></svg>',
+  mic: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M8.5 21h7"/></svg>',
   clipboard:
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h6"/><path d="M10 3h4l1 2h3v16H6V5h3l1-2z"/><path d="M9 13h5"/><path d="M13 10l3 3-3 3"/></svg>',
   keyboard:
@@ -140,16 +156,13 @@ const ICONS: Record<IconName, string> = {
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>',
   shield:
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-3z"/><path d="M9.5 12l1.8 1.8L15.5 9.8"/></svg>',
-  star:
-    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 16.9 6.6 19.8l1-6.1-4.4-4.3 6.1-.9L12 3z"/></svg>',
-  bug:
-    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8a4 4 0 0 1 8 0v1H8z"/><path d="M8 9h8v6a4 4 0 0 1-8 0z"/><path d="M4 13h4"/><path d="M16 13h4"/><path d="M5 19l3-2"/><path d="M19 19l-3-2"/><path d="M5 7l3 2"/><path d="M19 7l-3 2"/><path d="M10 4L8 2"/><path d="M14 4l2-2"/></svg>',
-  mail:
-    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>',
+  star: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 16.9 6.6 19.8l1-6.1-4.4-4.3 6.1-.9L12 3z"/></svg>',
+  bug: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8a4 4 0 0 1 8 0v1H8z"/><path d="M8 9h8v6a4 4 0 0 1-8 0z"/><path d="M4 13h4"/><path d="M16 13h4"/><path d="M5 19l3-2"/><path d="M19 19l-3-2"/><path d="M5 7l3 2"/><path d="M19 7l-3 2"/><path d="M10 4L8 2"/><path d="M14 4l2-2"/></svg>',
+  mail: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>',
 };
 
 const APP_PLATFORM = detectAppPlatform();
-const UPDATER_PLATFORMS = new Set<AppPlatform>(["macos", "windows"]);
+const UPDATER_PLATFORMS = new Set<AppPlatform>(["macos", "windows", "linux"]);
 
 const SETUP_STEPS: Array<{
   id: SetupStep;
@@ -185,7 +198,7 @@ const MAIN_WINDOW_SIZE = new LogicalSize(920, 680);
 const SETUP_WINDOW_SIZE = new LogicalSize(600, 904);
 let snapshot: Snapshot | null = null;
 let activeTab: MainTab = "general";
-let setupStep: SetupStep = "permissions";
+let setupStep: SetupStep = initialSetupStep();
 let setupFinalizing = false;
 let setupPollHandle: number | null = null;
 let setupScrollTop = 0;
@@ -199,6 +212,9 @@ const settingsNotices: Partial<Record<SettingsNoticeKey, SettingsNotice>> = {};
 const modelNotices = new Map<string, SettingsNotice>();
 let eventListenersInstalled = false;
 let modelPollHandle: number | null = null;
+let modelPollInFlight = false;
+const modelDownloadStarting = new Set<string>();
+let linuxStartupHotkeyMonitorAttempted = false;
 let confirmClearHistoryOpen = false;
 let clearHistoryBusy = false;
 const historyCopyFeedbackTimers = new WeakMap<HTMLButtonElement, number>();
@@ -268,6 +284,59 @@ const WINDOWS_DEFAULT_HANDS_FREE_SHORTCUT: ShortcutSettings = {
   },
 };
 
+const LINUX_DEFAULT_PUSH_TO_TALK_SHORTCUT: ShortcutSettings = {
+  displayName: "F9",
+  mode: "hold",
+  enabled: true,
+  doubleTapToggle: false,
+  chord: { modifiers: [], key: { function: 9 } },
+  platformCodes: {
+    macosKeyCodes: null,
+    windowsVirtualKeys: null,
+    linuxKeyCodes: [0xffc6],
+  },
+};
+
+const LINUX_DEFAULT_HANDS_FREE_SHORTCUT: ShortcutSettings = {
+  displayName: "Ctrl + Space",
+  mode: "toggle",
+  enabled: true,
+  doubleTapToggle: false,
+  chord: { modifiers: ["control"], key: "space" },
+  platformCodes: {
+    macosKeyCodes: null,
+    windowsVirtualKeys: null,
+    linuxKeyCodes: [0xffe3, 0x20],
+  },
+};
+
+const LINUX_SHORTCUT_MODIFIER_OPTIONS: Array<{
+  value: ShortcutModifier;
+  label: string;
+}> = [
+  { value: "control", label: "Ctrl" },
+  { value: "alt", label: "Alt" },
+  { value: "shift", label: "Shift" },
+  { value: "meta", label: "Super" },
+];
+
+const LINUX_SHORTCUT_KEY_OPTIONS: Array<{
+  value: string;
+  label: string;
+}> = [
+  { value: "space", label: "Space" },
+  { value: "return", label: "Enter" },
+  { value: "tab", label: "Tab" },
+  ...Array.from({ length: 24 }, (_, index) => {
+    const number = index + 1;
+    return { value: `f${number}`, label: `F${number}` };
+  }),
+  ..."abcdefghijklmnopqrstuvwxyz".split("").map((letter) => ({
+    value: letter,
+    label: letter.toUpperCase(),
+  })),
+];
+
 const APP_VERSION = packageJson.version;
 const PARROT_REPO_URL = "https://github.com/basic-intelligence/parrot";
 const BUG_REPORT_URL = `${PARROT_REPO_URL}/issues/new?template=bug_report.yml`;
@@ -305,6 +374,10 @@ function isWindowsPlatform() {
 
 function isMacosPlatform() {
   return APP_PLATFORM === "macos";
+}
+
+function isLinuxPlatform() {
+  return APP_PLATFORM === "linux";
 }
 
 function updatesSupportedOnPlatform() {
@@ -350,6 +423,12 @@ function defaultShortcutSettings() {
       handsFreeShortcut: cloneShortcut(WINDOWS_DEFAULT_HANDS_FREE_SHORTCUT),
     };
   }
+  if (isLinuxPlatform()) {
+    return {
+      pushToTalkShortcut: cloneShortcut(LINUX_DEFAULT_PUSH_TO_TALK_SHORTCUT),
+      handsFreeShortcut: cloneShortcut(LINUX_DEFAULT_HANDS_FREE_SHORTCUT),
+    };
+  }
 
   return {
     pushToTalkShortcut: cloneShortcut(DEFAULT_PUSH_TO_TALK_SHORTCUT),
@@ -393,15 +472,22 @@ async function installEventListeners() {
   await listen("parrot:recording-cancelled", () => {
     // Intentional user cancellation: the floating overlay owns user-facing feedback.
   });
-  await listen("parrot:recording-failed", () => {
-    // The floating overlay owns normal recording failures.
+  await listen<{ error?: string }>("parrot:recording-failed", (event) => {
+    const message = event.payload.error?.trim();
+    if (!message) return;
+
+    toast = message;
+    setSettingsNotice("recording", `Recording failed: ${message}`, "error");
+    render();
   });
   await listen<{ error?: string }>("parrot:hotkey-monitor-failed", (event) => {
     const message =
       event.payload.error ||
       (isWindowsPlatform()
         ? "Shortcut monitor failed. Try a different Windows shortcut."
-        : "Shortcut monitor failed. Check Accessibility permission.");
+        : isLinuxPlatform()
+          ? "Shortcut monitor failed. Try a different Linux shortcut or approve Parrot in your desktop shortcut dialog."
+          : "Shortcut monitor failed. Check Accessibility permission.");
     void maybeRequireInputMonitoring(message);
     shortcutNotice = {
       level: "error",
@@ -415,7 +501,8 @@ async function installEventListeners() {
       testResult === "Transcribing…" || testResult === "Transcribing...";
     testRecording = false;
     if (wasTestTranscribing) {
-      testResult = "Parrot Core crashed while transcribing. This recording was lost.";
+      testResult =
+        "Parrot Core crashed while transcribing. This recording was lost.";
     }
     if (wasTestRecording || wasTestTranscribing) render();
   });
@@ -441,11 +528,36 @@ async function load() {
     setupRequirementsComplete(next) &&
     !next.settings.onboardingCompleted
   ) {
-    next = await saveSettingsApi({ ...next.settings, onboardingCompleted: true });
+    next = await saveSettingsApi({
+      ...next.settings,
+      onboardingCompleted: true,
+    });
   }
 
   snapshot = next;
   render();
+  startLinuxHotkeyMonitorAfterInitialRender();
+}
+
+function startLinuxHotkeyMonitorAfterInitialRender() {
+  if (
+    linuxStartupHotkeyMonitorAttempted ||
+    !isLinuxPlatform() ||
+    !snapshot?.settings.onboardingCompleted ||
+    !permissionsAllGranted(snapshot.permissions)
+  ) {
+    return;
+  }
+
+  linuxStartupHotkeyMonitorAttempted = true;
+  void (async () => {
+    try {
+      await setHotkeyMonitorEnabled(true);
+    } catch (error) {
+      toast = `Shortcut monitor did not start: ${errorMessage(error)}`;
+      render();
+    }
+  })();
 }
 
 async function saveSettings(partial: Partial<AppSettings>) {
@@ -453,6 +565,34 @@ async function saveSettings(partial: Partial<AppSettings>) {
   const next = { ...snapshot.settings, ...partial };
   snapshot = await saveSettingsApi(next);
   render();
+}
+
+async function refreshLinuxShortcutsAfterSettingsSave(): Promise<ShortcutNotice | null> {
+  if (!isLinuxPlatform() || !snapshot) {
+    return null;
+  }
+
+  if (
+    !linuxShortcutStatus(snapshot.settings, snapshot.permissions)
+      .canInstallCompositorShortcuts
+  ) {
+    return null;
+  }
+
+  try {
+    await installLinuxShortcuts();
+    const permissions = await permissionStatuses();
+    acceptPermissionSnapshot(permissions);
+    return {
+      level: "success",
+      message: "Linux compositor shortcuts updated.",
+    };
+  } catch (error) {
+    return {
+      level: "error",
+      message: `Shortcut saved, but Linux compositor config was not updated: ${errorMessage(error)}`,
+    };
+  }
 }
 
 async function saveSettingsWithNotice(
@@ -545,10 +685,10 @@ function scheduleAutomaticUpdateChecks() {
   }, AUTO_UPDATE_CHECK_INTERVAL_MS);
 }
 
-async function maybeRunAutomaticUpdateCheck(
-  options: { force?: boolean } = {},
-) {
-  const lastCheckedAt = Number(localStorage.getItem(LAST_UPDATE_CHECK_KEY) || 0);
+async function maybeRunAutomaticUpdateCheck(options: { force?: boolean } = {}) {
+  const lastCheckedAt = Number(
+    localStorage.getItem(LAST_UPDATE_CHECK_KEY) || 0,
+  );
   const stale = Date.now() - lastCheckedAt > AUTO_UPDATE_CHECK_INTERVAL_MS;
 
   if (options.force || stale) {
@@ -640,7 +780,8 @@ function requiredModelsDownloaded(models: ModelStatus[]) {
 
 function setupRequirementsComplete(value: Snapshot) {
   return (
-    setupPermissionsComplete(value.permissions, value.settings) &&
+    (!setupPermissionsStepVisible() ||
+      setupPermissionsComplete(value.permissions, value.settings)) &&
     requiredModelsDownloaded(value.models)
   );
 }
@@ -732,7 +873,8 @@ function permissionRequirementsForDisplay(
 ): PermissionRequirement[] {
   const showInputMonitoring = inputMonitoringShownInOnboarding(settings);
   const dynamic = permissions.requirements ?? [];
-  const requirements = dynamic.length > 0 ? dynamic : fallbackPermissionRequirements(permissions);
+  const requirements =
+    dynamic.length > 0 ? dynamic : fallbackPermissionRequirements(permissions);
 
   return requirements.filter(
     (requirement) =>
@@ -936,11 +1078,11 @@ function render() {
       <section class="content">
         ${activeTab === "general" ? renderGeneral(settings, snapshot.permissions, models) : ""}
         ${activeTab === "recording" ? renderRecording(settings, devices) : ""}
-        ${activeTab === "cleanup" ? renderCleanup(
-          settings,
-          models,
-          snapshot.defaultCleanupPrompt,
-        ) : ""}
+        ${
+          activeTab === "cleanup"
+            ? renderCleanup(settings, models, snapshot.defaultCleanupPrompt)
+            : ""
+        }
         ${activeTab === "history" ? renderHistory(settings, history) : ""}
         ${activeTab === "about" ? renderAbout() : ""}
       </section>
@@ -991,11 +1133,35 @@ function renderClearHistoryConfirm() {
 }
 
 function setupStepIndex(step: SetupStep) {
-  return SETUP_STEPS.findIndex((item) => item.id === step);
+  return visibleSetupSteps().findIndex((item) => item.id === step);
 }
 
 function setupStepMeta(step: SetupStep) {
-  return SETUP_STEPS[setupStepIndex(step)] || SETUP_STEPS[0];
+  return (
+    visibleSetupSteps()[setupStepIndex(step)] ||
+    visibleSetupSteps()[0] ||
+    SETUP_STEPS[0]
+  );
+}
+
+function setupPermissionsStepVisible() {
+  return !isLinuxPlatform();
+}
+
+function visibleSetupSteps() {
+  return setupPermissionsStepVisible()
+    ? SETUP_STEPS
+    : SETUP_STEPS.filter((step) => step.id !== "permissions");
+}
+
+function initialSetupStep(): SetupStep {
+  return visibleSetupSteps()[0]?.id ?? "language";
+}
+
+function normalizeSetupStep(step: SetupStep): SetupStep {
+  return visibleSetupSteps().some((item) => item.id === step)
+    ? step
+    : initialSetupStep();
 }
 
 function setupPermissionIntro(settings: AppSettings) {
@@ -1012,8 +1178,14 @@ function setupPermissionIntro(settings: AppSettings) {
   return "Microphone records dictation. Accessibility lets Parrot Core consume the shortcut and paste the finished text.";
 }
 
-function setupIncompleteRequirementsCopy(settings: AppSettings | null | undefined) {
+function setupIncompleteRequirementsCopy(
+  settings: AppSettings | null | undefined,
+) {
   if (isWindowsPlatform()) {
+    return "Complete Microphone and the required local models first";
+  }
+
+  if (isLinuxPlatform()) {
     return "Complete Microphone and the required local models first";
   }
 
@@ -1027,6 +1199,10 @@ function setupCompleteCopy() {
     return "Microphone access and required local models are ready. Click Finish setup to start Parrot.";
   }
 
+  if (isLinuxPlatform()) {
+    return "Language and local models are ready. Click Finish setup to start Parrot.";
+  }
+
   return "All required permissions and models are ready. Click Finish setup to start Parrot.";
 }
 
@@ -1035,11 +1211,19 @@ function generalPermissionsIntro() {
     return "Parrot needs microphone access. Shortcuts and paste do not need extra Windows permissions.";
   }
 
+  if (isLinuxPlatform()) {
+    return "Parrot checks microphone access here. Linux shortcuts use the active compositor, portal, or evdev backend.";
+  }
+
   return "Parrot needs these no matter which language or local model you use.";
 }
 
 function syncSetupStepWithSnapshot(current: Snapshot) {
-  if (!setupPermissionsComplete(current.permissions, current.settings)) {
+  setupStep = normalizeSetupStep(setupStep);
+  if (
+    setupPermissionsStepVisible() &&
+    !setupPermissionsComplete(current.permissions, current.settings)
+  ) {
     setupStep = "permissions";
   }
 }
@@ -1052,25 +1236,28 @@ function setupStepComplete(current: Snapshot, step: SetupStep) {
 }
 
 function renderSetupProgress() {
+  const steps = visibleSetupSteps();
   const currentIndex = setupStepIndex(setupStep);
 
   return `
-    <div class="setup-progress" aria-label="Onboarding progress">
-      ${SETUP_STEPS.map((step, index) => {
-        const stateClass =
-          index < currentIndex
-            ? "complete"
-            : index === currentIndex
-              ? "active"
-              : "";
+    <div class="setup-progress" style="--setup-step-count: ${steps.length}" aria-label="Onboarding progress">
+      ${steps
+        .map((step, index) => {
+          const stateClass =
+            index < currentIndex
+              ? "complete"
+              : index === currentIndex
+                ? "active"
+                : "";
 
-        return `
+          return `
           <div class="setup-progress-item ${stateClass}">
             <span class="setup-progress-bar" aria-hidden="true"></span>
             <span class="setup-progress-label">${escapeHtml(step.label)}</span>
           </div>
         `;
-      }).join("")}
+        })
+        .join("")}
     </div>
   `;
 }
@@ -1198,18 +1385,24 @@ function renderPermissionRow(
   const granted = state === "granted";
   const setupVariant = options.variant === "setup";
   const opensSettings =
+    (options.opensSettings === true && state !== "notDetermined") ||
     (granted && options.openSettingsWhenGranted === true) ||
-    ((id === "microphone" || id === "inputMonitoring") && state === "denied");
+    ((id === "microphone" || id === "inputMonitoring") &&
+      state === "denied" &&
+      !isLinuxPlatform());
+  const requestable = options.requestable !== false || opensSettings;
 
   const actionDisabled =
-    granted && !opensSettings
+    !requestable || (granted && !opensSettings)
       ? 'disabled aria-disabled="true"'
       : "";
   const actionLabel = opensSettings
     ? "Open settings"
     : granted
       ? "Enabled"
-      : "Request";
+      : !requestable
+        ? "Unavailable"
+        : "Request";
   const showRefresh = !(options.hideRefreshWhenGranted && granted);
 
   return `
@@ -1256,7 +1449,11 @@ function renderPermissionRequirement(
     requirement.title,
     requirement.description,
     requirement.state,
-    options,
+    {
+      ...options,
+      opensSettings: requirement.opensSettings,
+      requestable: requirement.requestable,
+    },
   );
 }
 
@@ -1370,8 +1567,7 @@ function formatElapsedSeconds(totalSeconds: number) {
 }
 
 function modelStatusCopy(model: ModelStatus) {
-  const { progressTotal, progressBytes, progressPercent, finalizing } =
-    modelProgressState(model);
+  const { finalizing } = modelProgressState(model);
 
   const hasLocalData = modelHasLocalData(model);
   const modelSizeBytes = model.expectedBytes || model.localBytes;
@@ -1382,17 +1578,33 @@ function modelStatusCopy(model: ModelStatus) {
     : model.downloaded
       ? "Downloaded"
       : hasLocalData
-      ? "Incomplete"
-      : "Not downloaded";
+        ? "Incomplete"
+        : "Not downloaded";
 
   const sizeLabel = formatBytes(modelSizeBytes);
   const progressLabel = model.downloading
     ? finalizing
       ? finalizingModelDetail(model.id)
-      : `${formatBytes(progressBytes, "0 B")} / ${formatBytes(progressTotal)} · ${progressPercent.toFixed(0)}%`
+      : modelDownloadProgressText(model)
     : sizeLabel;
 
   return { status, sizeLabel, progressLabel };
+}
+
+function modelDownloadProgressText(model: ModelStatus) {
+  const { progressTotal, progressBytes } = modelProgressState(model);
+
+  if (model.downloading && progressBytes <= 0) {
+    return "Connecting to model host…";
+  }
+
+  if (progressTotal > 0) {
+    return `${formatBytes(progressBytes, "0 B")} / ${formatBytes(progressTotal)} · ${Math.floor(
+      (progressBytes / progressTotal) * 100,
+    )}%`;
+  }
+
+  return `${formatBytes(progressBytes, "0 B")} downloaded`;
 }
 
 function modelHasLocalData(model: ModelStatus) {
@@ -1400,8 +1612,9 @@ function modelHasLocalData(model: ModelStatus) {
 }
 
 function renderModelActionButton(model: ModelStatus) {
-  if (model.downloading) {
-    return `<button class="icon" disabled title="${escapeAttr(model.displayName)} is downloading" aria-label="${escapeAttr(model.displayName)} is downloading">${icon("download")}</button>`;
+  if (model.downloading || modelDownloadStarting.has(model.id)) {
+    const label = model.downloading ? "is downloading" : "download is starting";
+    return `<button class="icon" disabled title="${escapeAttr(model.displayName)} ${label}" aria-label="${escapeAttr(model.displayName)} ${label}">${icon("download")}</button>`;
   }
 
   if (model.downloaded || modelHasLocalData(model)) {
@@ -1429,10 +1642,11 @@ function renderLocalModelsSection(
   models: ModelStatus[],
   context: "setup" | "general",
 ) {
-  const cleanupHeading = context === "setup" ? "Cleanup (choose one)" : "Cleanup";
-  const speechModel = models.find(
-    (model) => model.role === "speech" && model.required,
-  ) ?? models.find((model) => model.role === "speech");
+  const cleanupHeading =
+    context === "setup" ? "Cleanup (choose one)" : "Cleanup";
+  const speechModel =
+    models.find((model) => model.role === "speech" && model.required) ??
+    models.find((model) => model.role === "speech");
 
   return `
     <section class="${context === "setup" ? "setup-section" : "settings-section"}">
@@ -1465,10 +1679,7 @@ function renderLocalModelsSection(
 
 function renderSelectedSpeechModelCard(model: ModelStatus) {
   const { sizeLabel } = modelStatusCopy(model);
-  const classes = [
-    "general-model-card",
-    model.downloaded ? "downloaded" : "",
-  ]
+  const classes = ["general-model-card", model.downloaded ? "downloaded" : ""]
     .filter(Boolean)
     .join(" ");
 
@@ -1546,7 +1757,8 @@ function renderCleanupModelChooser(
 ) {
   const selected = settings.cleanupModelId;
   const options = cleanupModelsForSettings(models);
-  const ariaLabel = context === "setup" ? "Cleanup model, choose one" : "Cleanup model";
+  const ariaLabel =
+    context === "setup" ? "Cleanup model, choose one" : "Cleanup model";
 
   return `
     <div class="cleanup-model-grid general-layout" role="radiogroup" aria-label="${escapeAttr(ariaLabel)}">
@@ -1563,7 +1775,9 @@ function renderCleanupModelChooser(
 function renderRecording(settings: AppSettings, devices: AudioDevice[]) {
   const pasteHint = isWindowsPlatform()
     ? "Off by default: Parrot pastes into whichever text box is focused when transcription finishes. Turn this on to make Parrot return to the original app/window. Windows can block paste into elevated/admin apps."
-    : "Off by default: Parrot pastes into whichever text box is focused when transcription finishes. Turn this on to make Parrot return to the original app/window.";
+    : isLinuxPlatform()
+      ? "Off by default: Parrot pastes into whichever text box is focused when transcription finishes."
+      : "Off by default: Parrot pastes into whichever text box is focused when transcription finishes. Turn this on to make Parrot return to the original app/window.";
 
   return `
     <header><h2>Recording</h2><p>Choose a microphone and shortcuts.</p></header>
@@ -1605,7 +1819,9 @@ function renderShortcutSettings(settings: AppSettings) {
   const resetDisabled = shortcutCaptureTarget ? "disabled" : "";
   const shortcutHelp = isWindowsPlatform()
     ? "Hold shortcuts can use a single modifier. Toggle shortcuts need a chord or function key."
-    : "Use a hold shortcut for quick phrases, or a toggle shortcut for longer dictation.";
+    : isLinuxPlatform()
+      ? "Linux shortcuts need a function key or a modifier plus another key."
+      : "Use a hold shortcut for quick phrases, or a toggle shortcut for longer dictation.";
 
   return `
     <div class="card shortcuts-card">
@@ -1633,11 +1849,90 @@ function renderShortcutSettings(settings: AppSettings) {
         )}
       </div>
 
+      ${renderLinuxShortcutStatus(settings)}
+
       <div class="button-row">
         <button id="resetShortcuts" class="secondary" ${resetDisabled}>Reset to defaults</button>
       </div>
     </div>
   `;
+}
+
+function renderLinuxShortcutStatus(settings: AppSettings) {
+  if (!isLinuxPlatform()) return "";
+
+  const status = linuxShortcutStatus(settings, snapshot?.permissions);
+  const installDisabled = shortcutCaptureTarget ? "disabled" : "";
+
+  return `
+    <div class="linux-shortcut-status">
+      <div>
+        <h4>Linux shortcut backend</h4>
+        <p>Current backend: ${escapeHtml(linuxShortcutBackendLabel(status))}</p>
+        <p class="hint">${escapeHtml(status.message)}</p>
+        <p class="hint">Hands-free: ${escapeHtml(shortcutDisplayName(settings.handsFreeShortcut))}. Push-to-talk: ${escapeHtml(shortcutDisplayName(settings.pushToTalkShortcut))}.</p>
+      </div>
+      ${
+        status.canInstallCompositorShortcuts
+          ? `<button id="installLinuxShortcuts" class="secondary" ${installDisabled}>Install/update Linux shortcuts</button>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function linuxShortcutStatus(
+  _settings: AppSettings,
+  permissions?: PermissionSnapshot | null,
+): LinuxShortcutStatus {
+  const requirement = permissions?.requirements?.find(
+    (requirement) => requirement.kind === "globalShortcut",
+  );
+  const message =
+    requirement?.description ??
+    "Shortcut backend has not been checked for this Linux session yet.";
+  const backend = permissions?.linuxHotkeyBackend ?? "needsSetup";
+
+  return {
+    backend,
+    desktop: "Linux",
+    canInstallCompositorShortcuts:
+      backend === "compositor" || backend === "needsSetup",
+    canCaptureInApp: backend === "x11" || backend === "evdev",
+    message,
+  };
+}
+
+function linuxShortcutBackendLabel(status: LinuxShortcutStatus) {
+  switch (status.backend) {
+    case "x11":
+      return "X11 global grabs";
+    case "compositor":
+      return "Hyprland/Omarchy compositor shortcuts";
+    case "portal":
+      return "XDG GlobalShortcuts portal";
+    case "evdev":
+      return "evdev kernel-level fallback";
+    case "unsupported":
+      return "Unsupported desktop session";
+    case "needsSetup":
+      return "Setup needed";
+  }
+}
+
+function linuxShortcutChangeInstructions(target: ShortcutSettingKey) {
+  const shortcutName =
+    target === "handsFreeShortcut" ? "hands-free" : "push-to-talk";
+
+  return `On Omarchy/Hyprland, ${shortcutName} is changed through Hyprland keybindings. Update the saved shortcut below, then click Save and install. You can also edit ~/.config/hypr/parrot.conf and run hyprctl reload.`;
+}
+
+function linuxCanCaptureShortcutInApp() {
+  if (!isLinuxPlatform() || !snapshot) return true;
+
+  const status = linuxShortcutStatus(snapshot.settings, snapshot.permissions);
+
+  return status.backend === "x11" || status.backend === "evdev";
 }
 
 function renderShortcutNotice(notice: ShortcutNotice) {
@@ -1678,6 +1973,23 @@ function clearModelNotice(modelId: string) {
 
 function clearAllModelNotices() {
   modelNotices.clear();
+}
+
+function acceptModelStatuses(models: ModelStatus[]) {
+  if (!snapshot) return;
+
+  snapshot = { ...snapshot, models };
+
+  for (const model of models) {
+    if (model.downloading || model.downloaded || model.error) {
+      modelDownloadStarting.delete(model.id);
+
+      const notice = modelNotices.get(model.id);
+      if (notice?.message === "Starting download…") {
+        clearModelNotice(model.id);
+      }
+    }
+  }
 }
 
 function isSettingsNoticeKey(key: string): key is SettingsNoticeKey {
@@ -1737,19 +2049,43 @@ function renderShortcutSettingRow(
   const captureInProgress = shortcutCaptureTarget !== null;
   const displayName = shortcutDisplayName(shortcut);
   const preview = capturing ? "" : displayName;
+  const linuxStatus =
+    isLinuxPlatform() && snapshot
+      ? linuxShortcutStatus(snapshot.settings, snapshot.permissions)
+      : null;
+  const linuxUsesCompositor =
+    linuxStatus?.backend === "compositor" ||
+    linuxStatus?.backend === "needsSetup";
   const keycaps =
     shortcutKeycaps(preview) ||
-    '<span class="shortcut-placeholder">Press shortcut…</span>';
+    (capturing
+      ? '<span class="shortcut-placeholder">Press shortcut…</span>'
+      : '<span class="shortcut-placeholder">Not set</span>');
   const help = capturing ? shortcutCaptureInlineHelp(target) : "";
+  const captureLabel = capturing
+    ? "Listening for shortcut"
+    : linuxUsesCompositor
+      ? "Managed by Linux"
+      : "Current shortcut";
+  const captureDetail = capturing
+    ? "Saves automatically"
+    : linuxUsesCompositor
+      ? "Use Linux shortcut setup"
+      : "Click to change";
   const recorderAriaLabel = capturing
     ? `Listening for ${title} shortcut`
-    : `Change ${title} shortcut. Current shortcut: ${displayName}`;
+    : linuxUsesCompositor
+      ? `${title} shortcut is managed by Linux shortcut setup. Current shortcut: ${displayName}`
+      : `Change ${title} shortcut. Current shortcut: ${displayName}`;
   const inlineHelp = capturing
     ? `<p class="shortcut-row-help" role="status" aria-live="polite" aria-atomic="true">${escapeHtml(help)}</p>`
     : "";
-  const disabled = captureInProgress ? "disabled" : "";
+  const disabled = captureInProgress && !capturing ? "disabled" : "";
   const shortcutEnabled = shortcut.enabled !== false;
   const settingDisabled = captureInProgress ? "disabled" : "";
+  const linuxEditor = linuxUsesCompositor
+    ? renderLinuxShortcutEditor(target, shortcut, settingDisabled)
+    : "";
 
   return `
     <article class="shortcut-setting-row ${capturing ? "capturing" : ""} ${shortcutEnabled ? "" : "shortcut-disabled"}">
@@ -1765,9 +2101,9 @@ function renderShortcutSettingRow(
           aria-label="${escapeAttr(recorderAriaLabel)}"
           ${disabled}
         >
-          <span class="shortcut-recorder-label">${capturing ? "Listening for shortcut" : "Current shortcut"}</span>
+          <span class="shortcut-recorder-label">${captureLabel}</span>
           <span class="shortcut-display" aria-hidden="true">${keycaps}</span>
-          <small>${capturing ? "Saves automatically" : "Click to change"}</small>
+          <small>${captureDetail}</small>
         </button>
         <label class="check shortcut-enable-row">
           <input
@@ -1779,13 +2115,68 @@ function renderShortcutSettingRow(
           />
           Enabled
         </label>
+        ${linuxEditor}
       </div>
       ${inlineHelp}
     </article>
   `;
 }
 
+function renderLinuxShortcutEditor(
+  target: ShortcutSettingKey,
+  shortcut: ShortcutSettings,
+  disabled: string,
+) {
+  const modifiers = new Set(shortcut.chord?.modifiers ?? []);
+  const keyValue = linuxShortcutEditorKeyValue(shortcut.chord?.key);
+
+  return `
+    <div class="linux-shortcut-editor" data-shortcut-target="${target}">
+      <div class="linux-shortcut-modifiers" aria-label="${escapeAttr(shortcutTargetLabel(target))} modifiers">
+        ${LINUX_SHORTCUT_MODIFIER_OPTIONS.map(
+          (option) => `
+            <label class="check compact-check">
+              <input
+                class="linux-shortcut-modifier"
+                data-shortcut-target="${target}"
+                type="checkbox"
+                value="${escapeAttr(option.value)}"
+                ${modifiers.has(option.value) ? "checked" : ""}
+                ${disabled}
+              />
+              ${escapeHtml(option.label)}
+            </label>
+          `,
+        ).join("")}
+      </div>
+      <div class="linux-shortcut-picker-row">
+        <select class="linux-shortcut-key" data-shortcut-target="${target}" aria-label="${escapeAttr(shortcutTargetLabel(target))} key" ${disabled}>
+          ${LINUX_SHORTCUT_KEY_OPTIONS.map(
+            (option) =>
+              `<option value="${escapeAttr(option.value)}" ${option.value === keyValue ? "selected" : ""}>${escapeHtml(option.label)}</option>`,
+          ).join("")}
+        </select>
+        <button class="secondary save-linux-shortcut" data-shortcut-target="${target}" ${disabled}>Save and install</button>
+      </div>
+    </div>
+  `;
+}
+
 function shortcutCaptureInlineHelp(target: ShortcutSettingKey) {
+  if (isLinuxPlatform()) {
+    if (!snapshot) {
+      return "Press the shortcut now. Press Escape to cancel.";
+    }
+
+    const status = linuxShortcutStatus(snapshot.settings, snapshot.permissions);
+
+    if (status.backend === "x11" || status.backend === "evdev") {
+      return "Press a function key or a modifier plus another key. Press Escape to cancel.";
+    }
+
+    return linuxShortcutChangeInstructions(target);
+  }
+
   if (target === "pushToTalkShortcut") {
     if (isWindowsPlatform()) {
       return "Press a single modifier, a modifier plus another key, or a function key. Press Escape to cancel.";
@@ -1798,11 +2189,18 @@ function shortcutCaptureInlineHelp(target: ShortcutSettingKey) {
 }
 
 function shortcutCaptureStartMessage(target: ShortcutSettingKey) {
+  if (isLinuxPlatform()) {
+    return `${shortcutTargetLabel(target)} shortcut setup started. Press the shortcut now.`;
+  }
+
   return `${shortcutTargetLabel(target)} is listening. Press the shortcut once. It saves automatically. Press Escape to cancel.`;
 }
 
 function shortcutDisplayName(shortcut: ShortcutSettings) {
   if (isWindowsPlatform() && shortcut.displayName) {
+    return shortcut.displayName;
+  }
+  if (isLinuxPlatform() && shortcut.displayName) {
     return shortcut.displayName;
   }
 
@@ -1818,6 +2216,19 @@ function shortcutDisplayName(shortcut: ShortcutSettings) {
 }
 
 function shortcutModifierLabel(modifier: string) {
+  if (isLinuxPlatform()) {
+    const labels: Record<string, string> = {
+      command: "Meta",
+      control: "Ctrl",
+      option: "Alt",
+      alt: "Alt",
+      shift: "Shift",
+      fn: "Fn",
+      meta: "Meta",
+    };
+    return labels[modifier] ?? modifier;
+  }
+
   const labels: Record<string, string> = isWindowsPlatform()
     ? {
         command: "Win",
@@ -1859,6 +2270,155 @@ function shortcutKeyLabel(key: ShortcutKey) {
   if ("character" in key) return key.character.toUpperCase();
   if ("function" in key) return `F${key.function}`;
   return "";
+}
+
+function linuxShortcutFromParts(
+  modifiers: ShortcutModifier[],
+  key: ShortcutKey,
+  mode: "hold" | "toggle",
+): ShortcutSettings {
+  const displayName = [
+    ...modifiers.map((modifier) => {
+      switch (modifier) {
+        case "control":
+          return "Ctrl";
+        case "alt":
+        case "option":
+          return "Alt";
+        case "shift":
+          return "Shift";
+        case "meta":
+        case "command":
+          return "Super";
+        default:
+          return "";
+      }
+    }),
+    shortcutKeyLabel(key),
+  ]
+    .filter(Boolean)
+    .join(" + ");
+
+  return {
+    displayName,
+    mode,
+    enabled: true,
+    doubleTapToggle: false,
+    chord: {
+      modifiers,
+      key,
+    },
+    platformCodes: {
+      macosKeyCodes: null,
+      windowsVirtualKeys: null,
+      linuxKeyCodes: linuxKeyCodesForShortcut(modifiers, key),
+    },
+  };
+}
+
+function linuxKeyCodesForShortcut(
+  modifiers: ShortcutModifier[],
+  key: ShortcutKey,
+): number[] {
+  return [
+    ...modifiers
+      .map(linuxKeyCodeForModifier)
+      .filter(isNumberKeyCode),
+    linuxKeyCodeForKey(key),
+  ].filter(isNumberKeyCode);
+}
+
+function linuxShortcutShapeIsValid(
+  modifiers: ShortcutModifier[],
+  key: ShortcutKey,
+) {
+  return modifiers.length > 0 || (typeof key === "object" && "function" in key);
+}
+
+function isNumberKeyCode(code: number | null): code is number {
+  return code !== null;
+}
+
+function linuxKeyCodeForModifier(modifier: ShortcutModifier): number | null {
+  switch (modifier) {
+    case "control":
+      return 0xffe3;
+    case "alt":
+    case "option":
+      return 0xffe9;
+    case "shift":
+      return 0xffe1;
+    case "command":
+    case "meta":
+      return 0xffeb;
+    default:
+      return null;
+  }
+}
+
+function linuxKeyCodeForKey(key: ShortcutKey): number | null {
+  if (typeof key === "string") {
+    const keyCodes: Record<string, number> = {
+      space: 0x20,
+      return: 0xff0d,
+      tab: 0xff09,
+      escape: 0xff1b,
+      arrowLeft: 0xff51,
+      arrowUp: 0xff52,
+      arrowRight: 0xff53,
+      arrowDown: 0xff54,
+      delete: 0xffff,
+    };
+    return keyCodes[key] ?? null;
+  }
+
+  if ("function" in key) return 0xffbe + key.function - 1;
+  if ("character" in key) {
+    const character = key.character.trim().charAt(0).toLowerCase();
+    return character ? character.charCodeAt(0) : null;
+  }
+
+  return null;
+}
+
+function linuxShortcutEditorKeyValue(key: ShortcutKey | null | undefined) {
+  if (!key) return "space";
+  if (typeof key === "string") return key;
+  if ("function" in key) return `f${key.function}`;
+  if ("character" in key)
+    return key.character.trim().charAt(0).toLowerCase() || "space";
+  return "space";
+}
+
+function shortcutKeyFromLinuxEditorValue(value: string): ShortcutKey {
+  if (value.startsWith("f")) {
+    const number = Number(value.slice(1));
+    if (Number.isInteger(number) && number >= 1 && number <= 24) {
+      return { function: number };
+    }
+  }
+
+  if (value.length === 1) {
+    return { character: value };
+  }
+
+  if (
+    [
+      "space",
+      "return",
+      "tab",
+      "escape",
+      "arrowLeft",
+      "arrowRight",
+      "arrowUp",
+      "arrowDown",
+      "delete",
+    ].includes(value)
+  ) {
+    return value as ShortcutKey;
+  }
+
+  return "space";
 }
 
 function shortcutKeycaps(displayName: string) {
@@ -2185,7 +2745,12 @@ function renderGeneral(
       ${renderSettingsNotice("permissions")}
       <div class="permission-list embedded">
         ${permissionRequirementsForDisplay(permissions, settings)
-          .filter((requirement) => requirement.kind !== "inputMonitoring" || shouldShowInputMonitoringPermission(settings) || requirement.required)
+          .filter(
+            (requirement) =>
+              requirement.kind !== "inputMonitoring" ||
+              shouldShowInputMonitoringPermission(settings) ||
+              requirement.required,
+          )
           .map((requirement) =>
             renderPermissionRequirement(requirement, {
               hideRefreshWhenGranted: true,
@@ -2260,7 +2825,10 @@ function renderUpdateInstallProgress() {
   const hasTotal = totalBytes !== null && totalBytes > 0;
   const percent =
     hasTotal && progress
-      ? Math.max(0, Math.min(100, (progress.downloadedBytes / totalBytes) * 100))
+      ? Math.max(
+          0,
+          Math.min(100, (progress.downloadedBytes / totalBytes) * 100),
+        )
       : null;
 
   return `
@@ -2368,11 +2936,19 @@ function bindModelButtons() {
         }
         clearSettingsNotice("models");
         clearModelNotice(kind);
+        modelDownloadStarting.add(kind);
+        setModelNotice(kind, "Starting download…", "info");
+        render();
+
         try {
-          snapshot = await downloadModel(kind);
+          const models = await downloadModel(kind);
+          acceptModelStatuses(models);
+          modelDownloadStarting.delete(kind);
+          clearModelNotice(kind);
           render();
           pollModelsUntilStable();
         } catch (error) {
+          modelDownloadStarting.delete(kind);
           setModelNotice(
             kind,
             `Could not start model download: ${errorMessage(error)}`,
@@ -2404,7 +2980,10 @@ function bindModelButtons() {
           }
           clearModelNotice(kind);
         } catch (error) {
-          setModelNotice(kind, `Could not delete model: ${errorMessage(error)}`);
+          setModelNotice(
+            kind,
+            `Could not delete model: ${errorMessage(error)}`,
+          );
         }
 
         render();
@@ -2423,7 +3002,9 @@ function bindCleanupModelChooser() {
         if (!id) return;
 
         if (button.dataset.cleanupModelContext === "general") {
-          const model = snapshot.models.find((candidate) => candidate.id === id);
+          const model = snapshot.models.find(
+            (candidate) => candidate.id === id,
+          );
           if (!model?.downloaded) {
             cleanupModelSelectionNotice = {
               id,
@@ -2468,7 +3049,9 @@ function bindLanguageControls() {
         if (mode === "specific") {
           const fallback =
             languageByCode(snapshot?.settings.dictationLanguageCode) ||
-            SPECIFIC_LANGUAGE_OPTIONS.find((language) => language.code === "es") ||
+            SPECIFIC_LANGUAGE_OPTIONS.find(
+              (language) => language.code === "es",
+            ) ||
             SPECIFIC_LANGUAGE_OPTIONS[0];
           await saveLanguageChoice("specific", fallback.code);
           return;
@@ -2478,7 +3061,8 @@ function bindLanguageControls() {
       };
     });
 
-  const languageCode = document.querySelector<HTMLSelectElement>("#languageCode");
+  const languageCode =
+    document.querySelector<HTMLSelectElement>("#languageCode");
   if (languageCode) {
     languageCode.onchange = () => {
       void saveLanguageChoice("specific", languageCode.value);
@@ -2523,9 +3107,10 @@ function bindSetupEvents() {
   const setupBack = document.querySelector<HTMLButtonElement>("#setupBack");
   if (setupBack)
     setupBack.onclick = () => {
+      const steps = visibleSetupSteps();
       const index = setupStepIndex(setupStep);
       if (index <= 0) return;
-      setupStep = SETUP_STEPS[index - 1].id;
+      setupStep = steps[index - 1].id;
       toast = "";
       render();
       scrollPageToTop();
@@ -2535,9 +3120,10 @@ function bindSetupEvents() {
   if (setupNext)
     setupNext.onclick = () => {
       if (!snapshot || !setupStepComplete(snapshot, setupStep)) return;
+      const steps = visibleSetupSteps();
       const index = setupStepIndex(setupStep);
-      if (index >= SETUP_STEPS.length - 1) return;
-      setupStep = SETUP_STEPS[index + 1].id;
+      if (index >= steps.length - 1) return;
+      setupStep = steps[index + 1].id;
       toast = "";
       render();
       scrollPageToTop();
@@ -2548,38 +3134,75 @@ function bindSetupEvents() {
     finishSetup.onclick = async () => {
       if (!snapshot) return;
 
+      setupFinalizing = true;
+      toast = "Finishing setup...";
+      render();
+
       try {
-        const permissions = await permissionStatuses();
-        acceptPermissionSnapshot(permissions);
+        if (!isLinuxPlatform()) {
+          const permissions = await permissionStatuses();
+          acceptPermissionSnapshot(permissions);
+        }
+
+        const models = await modelStatuses();
+        acceptModelStatuses(models);
 
         if (!snapshot || !setupRequirementsComplete(snapshot)) {
+          setupFinalizing = false;
           toast = `Setup is not complete yet. ${setupIncompleteRequirementsCopy(snapshot?.settings)}.`;
           render();
           return;
         }
-
-        setupFinalizing = true;
-        toast = "Preparing local models for first use…";
+      } catch (error) {
+        const message = errorMessage(error);
+        setupFinalizing = false;
+        toast = `Setup is not complete yet. ${message}`;
         render();
+        return;
+      }
 
-        await warmModels();
-        await setHotkeyMonitorEnabled(true);
+      try {
         snapshot = await saveSettingsApi({
           ...snapshot.settings,
           onboardingCompleted: true,
         });
-
         setupFinalizing = false;
         toast = "";
         render();
+        void prepareAfterSetup();
       } catch (error) {
-        const message = errorMessage(error);
-        await maybeRequireInputMonitoring(message);
         setupFinalizing = false;
-        toast = `Setup is almost complete, but Parrot could not start the shortcut monitor: ${message}`;
+        toast = `Could not finish setup: ${errorMessage(error)}`;
         render();
       }
     };
+}
+
+async function prepareAfterSetup() {
+  try {
+    await warmModels();
+  } catch (error) {
+    setSettingsNotice(
+      "models",
+      `Could not prepare local models: ${errorMessage(error)}`,
+    );
+    render();
+  }
+
+  try {
+    await setHotkeyMonitorEnabled(true);
+    if (isLinuxPlatform()) {
+      linuxStartupHotkeyMonitorAttempted = true;
+    }
+  } catch (error) {
+    const message = errorMessage(error);
+    await maybeRequireInputMonitoring(message);
+    setSettingsNotice(
+      "permissions",
+      `Shortcut monitor did not start: ${message}`,
+    );
+    render();
+  }
 }
 
 async function refreshPermissionStatus(options: { silent?: boolean } = {}) {
@@ -2610,6 +3233,7 @@ async function refreshPermissionStatus(options: { silent?: boolean } = {}) {
 function syncSetupPolling() {
   const shouldPoll =
     snapshot !== null &&
+    setupPermissionsStepVisible() &&
     !setupPermissionsComplete(snapshot.permissions, snapshot.settings);
 
   if (shouldPoll && setupPollHandle === null) {
@@ -2663,9 +3287,8 @@ function bindEvents() {
         "Could not update sound setting",
       );
 
-  const pasteIntoRecordingStartWindow = document.querySelector<HTMLInputElement>(
-    "#pasteIntoRecordingStartWindow",
-  );
+  const pasteIntoRecordingStartWindow =
+    document.querySelector<HTMLInputElement>("#pasteIntoRecordingStartWindow");
   if (pasteIntoRecordingStartWindow)
     pasteIntoRecordingStartWindow.onchange = () =>
       void saveSettingsWithNotice(
@@ -2694,7 +3317,8 @@ function bindEvents() {
       if (!snapshot) return;
 
       const rawPrompt =
-        document.querySelector<HTMLTextAreaElement>("#cleanupPrompt")?.value ?? "";
+        document.querySelector<HTMLTextAreaElement>("#cleanupPrompt")?.value ??
+        "";
 
       const routeDefaultPrompt = snapshot.defaultCleanupPrompt;
 
@@ -2713,8 +3337,9 @@ function bindEvents() {
       );
     };
 
-  const resetCleanupPrompt =
-    document.querySelector<HTMLButtonElement>("#resetCleanupPrompt");
+  const resetCleanupPrompt = document.querySelector<HTMLButtonElement>(
+    "#resetCleanupPrompt",
+  );
   if (resetCleanupPrompt)
     resetCleanupPrompt.onclick = async () => {
       await saveSettingsWithNotice(
@@ -2724,8 +3349,9 @@ function bindEvents() {
       );
     };
 
-  const addDictionaryEntry =
-    document.querySelector<HTMLButtonElement>("#addDictionaryEntry");
+  const addDictionaryEntry = document.querySelector<HTMLButtonElement>(
+    "#addDictionaryEntry",
+  );
   if (addDictionaryEntry)
     addDictionaryEntry.onclick = () => {
       if (!snapshot) return;
@@ -2952,15 +3578,59 @@ function bindEvents() {
               enabled: input.checked,
             },
           } as Partial<AppSettings>);
+          const linuxRefresh = await refreshLinuxShortcutsAfterSettingsSave();
+          if (linuxRefresh?.level === "error") {
+            shortcutNotice = linuxRefresh;
+          } else if (linuxRefresh) {
+            shortcutNotice = {
+              level: "success",
+              message: `Shortcut updated. ${linuxRefresh.message}`,
+            };
+          }
         } catch (error) {
           shortcutNotice = {
             level: "error",
             message: `Could not update ${shortcutTargetLabel(target)}: ${errorMessage(error)}`,
           };
-          render();
         }
+        render();
       };
     });
+
+  document
+    .querySelectorAll<HTMLButtonElement>(".save-linux-shortcut")
+    .forEach((button) => {
+      button.onclick = async () => {
+        const target = button.dataset.shortcutTarget as
+          | ShortcutSettingKey
+          | undefined;
+        if (!target) return;
+        await saveLinuxShortcutFromEditor(target);
+      };
+    });
+
+  const installLinuxShortcutsButton = document.querySelector<HTMLButtonElement>(
+    "#installLinuxShortcuts",
+  );
+  if (installLinuxShortcutsButton)
+    installLinuxShortcutsButton.onclick = async () => {
+      try {
+        await installLinuxShortcuts();
+        const permissions = await permissionStatuses();
+        acceptPermissionSnapshot(permissions);
+        shortcutNotice = {
+          level: "success",
+          message:
+            "Linux compositor shortcuts installed. Press Ctrl + Space for hands-free dictation or F9 for push-to-talk.",
+        };
+      } catch (error) {
+        shortcutNotice = {
+          level: "error",
+          message: `Could not install Linux shortcuts: ${errorMessage(error)}`,
+        };
+      }
+      render();
+    };
 
   const resetShortcuts =
     document.querySelector<HTMLButtonElement>("#resetShortcuts");
@@ -2979,6 +3649,16 @@ function bindEvents() {
       };
       try {
         await saveSettings(defaultShortcutSettings());
+        const linuxRefresh = await refreshLinuxShortcutsAfterSettingsSave();
+        if (linuxRefresh) {
+          shortcutNotice =
+            linuxRefresh.level === "success"
+              ? {
+                  level: "success",
+                  message: `Shortcuts reset to defaults. ${linuxRefresh.message}`,
+                }
+              : linuxRefresh;
+        }
       } catch (error) {
         shortcutNotice = {
           level: "error",
@@ -2998,18 +3678,22 @@ function bindEvents() {
             message: `Shortcuts reset, but the hotkey monitor did not restart: ${message}`,
           };
           render();
+          return;
         }
       }
+      render();
     };
 }
 
 function bindAlertDismissers() {
-  document.querySelectorAll<HTMLButtonElement>(".dismiss-toast").forEach((button) => {
-    button.onclick = () => {
-      toast = "";
-      render();
-    };
-  });
+  document
+    .querySelectorAll<HTMLButtonElement>(".dismiss-toast")
+    .forEach((button) => {
+      button.onclick = () => {
+        toast = "";
+        render();
+      };
+    });
 
   document
     .querySelectorAll<HTMLButtonElement>(".dismiss-shortcut-notice")
@@ -3055,20 +3739,25 @@ function bindUpdateButtons() {
 }
 
 function bindExternalLinks() {
-  document.querySelectorAll<HTMLButtonElement>(".external-link").forEach((button) => {
-    button.onclick = async () => {
-      const url = button.dataset.externalUrl;
-      if (!url) return;
+  document
+    .querySelectorAll<HTMLButtonElement>(".external-link")
+    .forEach((button) => {
+      button.onclick = async () => {
+        const url = button.dataset.externalUrl;
+        if (!url) return;
 
-      try {
-        await openUrl(url);
-        clearSettingsNotice("about");
-      } catch (error) {
-        setSettingsNotice("about", `Could not open link: ${errorMessage(error)}`);
-        render();
-      }
-    };
-  });
+        try {
+          await openUrl(url);
+          clearSettingsNotice("about");
+        } catch (error) {
+          setSettingsNotice(
+            "about",
+            `Could not open link: ${errorMessage(error)}`,
+          );
+          render();
+        }
+      };
+    });
 }
 
 function showHistoryCopyFeedback(button: HTMLButtonElement) {
@@ -3093,8 +3782,88 @@ function showHistoryCopyFeedback(button: HTMLButtonElement) {
   historyCopyFeedbackTimers.set(button, timer);
 }
 
+async function saveLinuxShortcutFromEditor(target: ShortcutSettingKey) {
+  if (!snapshot) return;
+
+  const modifiers = Array.from(
+    document.querySelectorAll<HTMLInputElement>(
+      `.linux-shortcut-modifier[data-shortcut-target="${target}"]:checked`,
+    ),
+  ).map((input) => input.value as ShortcutModifier);
+  const keyValue =
+    document.querySelector<HTMLSelectElement>(
+      `.linux-shortcut-key[data-shortcut-target="${target}"]`,
+    )?.value ?? "space";
+  const mode = target === "pushToTalkShortcut" ? "hold" : "toggle";
+  const key = shortcutKeyFromLinuxEditorValue(keyValue);
+
+  if (!linuxShortcutShapeIsValid(modifiers, key)) {
+    shortcutNotice = {
+      level: "error",
+      message:
+        "Linux shortcuts need a function key or a modifier plus another key.",
+    };
+    render();
+    return;
+  }
+
+  const current = snapshot.settings[target];
+  const shortcut = {
+    ...linuxShortcutFromParts(modifiers, key, mode),
+    enabled: current.enabled,
+    doubleTapToggle: current.doubleTapToggle,
+  };
+  const otherShortcut =
+    target === "pushToTalkShortcut"
+      ? snapshot.settings.handsFreeShortcut
+      : snapshot.settings.pushToTalkShortcut;
+
+  if (shortcutsEquivalent(shortcut, otherShortcut)) {
+    shortcutNotice = {
+      level: "error",
+      message: "Push to talk and hands-free mode need different shortcuts.",
+    };
+    render();
+    return;
+  }
+
+  try {
+    await saveSettings({
+      [target]: shortcut,
+    } as Partial<AppSettings>);
+
+    const linuxRefresh = await refreshLinuxShortcutsAfterSettingsSave();
+    if (linuxRefresh?.level === "error") {
+      shortcutNotice = linuxRefresh;
+    } else {
+      shortcutNotice = {
+        level: "success",
+        message: `${shortcutTargetLabel(target)} shortcut saved: ${shortcut.displayName}${
+          linuxRefresh ? ` ${linuxRefresh.message}` : ""
+        }`,
+      };
+    }
+  } catch (error) {
+    shortcutNotice = {
+      level: "error",
+      message: `Could not update ${shortcutTargetLabel(target)}: ${errorMessage(error)}`,
+    };
+  }
+
+  render();
+}
+
 async function beginShortcutCapture(target: ShortcutSettingKey) {
   if (!snapshot || shortcutCaptureTarget) return;
+
+  if (isLinuxPlatform() && !linuxCanCaptureShortcutInApp()) {
+    shortcutNotice = {
+      level: "info",
+      message: linuxShortcutChangeInstructions(target),
+    };
+    render();
+    return;
+  }
 
   const session = ++shortcutCaptureSession;
   shortcutCaptureTarget = target;
@@ -3133,10 +3902,17 @@ async function beginShortcutCapture(target: ShortcutSettingKey) {
       },
     } as Partial<AppSettings>);
 
-    await finishShortcutCapture(
-      `${shortcutTargetLabel(target)} shortcut saved: ${shortcut.displayName}`,
-      "success",
-    );
+    const linuxRefresh = await refreshLinuxShortcutsAfterSettingsSave();
+    if (linuxRefresh?.level === "error") {
+      await finishShortcutCapture(linuxRefresh.message, "error");
+    } else {
+      await finishShortcutCapture(
+        `${shortcutTargetLabel(target)} shortcut saved: ${shortcut.displayName}${
+          linuxRefresh ? ` ${linuxRefresh.message}` : ""
+        }`,
+        "success",
+      );
+    }
   } catch (error) {
     const message = errorMessage(error) || "Shortcut capture cancelled.";
     await finishShortcutCapture(
@@ -3208,8 +3984,13 @@ function shortcutWindowsVirtualKeys(shortcut: ShortcutSettings) {
   return shortcut.platformCodes?.windowsVirtualKeys ?? [];
 }
 
+function shortcutLinuxKeyCodes(shortcut: ShortcutSettings) {
+  return shortcut.platformCodes?.linuxKeyCodes ?? [];
+}
+
 function shortcutPlatformCodes(shortcut: ShortcutSettings) {
   if (isWindowsPlatform()) return shortcutWindowsVirtualKeys(shortcut);
+  if (isLinuxPlatform()) return shortcutLinuxKeyCodes(shortcut);
   return shortcutMacosKeyCodes(shortcut);
 }
 
@@ -3274,34 +4055,47 @@ function newDictionaryId() {
 
 function pollModelsUntilStable() {
   if (modelPollHandle !== null) window.clearInterval(modelPollHandle);
-  modelPollHandle = window.setInterval(async () => {
-    try {
-      snapshot = await getAppSnapshot();
-      render();
-      const stillDownloading = snapshot.models.some(
-        (model) => model.downloading,
-      );
-        if (!stillDownloading && modelPollHandle !== null) {
-          window.clearInterval(modelPollHandle);
-          modelPollHandle = null;
-        if (snapshot.models.some((model) => model.error)) {
-          setSettingsNotice("models", "A model download failed.");
-        } else {
-          clearSettingsNotice("models");
-          clearAllModelNotices();
-          }
-          render();
-        }
-      } catch (error) {
-        if (modelPollHandle !== null) window.clearInterval(modelPollHandle);
+  void refreshModelsUntilStable();
+  modelPollHandle = window.setInterval(refreshModelsUntilStable, 1500);
+}
+
+async function refreshModelsUntilStable() {
+  if (modelPollInFlight) return;
+  modelPollInFlight = true;
+
+  try {
+    const models = await modelStatuses();
+    acceptModelStatuses(models);
+
+    const stillDownloading = models.some((model) => model.downloading);
+
+    if (!stillDownloading) {
+      if (modelPollHandle !== null) {
+        window.clearInterval(modelPollHandle);
         modelPollHandle = null;
-        setSettingsNotice(
-          "models",
-          `Could not refresh model status: ${errorMessage(error)}`,
-        );
-        render();
       }
-  }, 1500);
+
+      modelDownloadStarting.clear();
+      if (models.some((model) => model.error)) {
+        setSettingsNotice("models", "A model download failed.");
+      } else {
+        clearSettingsNotice("models");
+        clearAllModelNotices();
+      }
+    }
+
+    render();
+  } catch (error) {
+    if (modelPollHandle !== null) window.clearInterval(modelPollHandle);
+    modelPollHandle = null;
+    setSettingsNotice(
+      "models",
+      `Could not refresh model status: ${errorMessage(error)}`,
+    );
+    render();
+  } finally {
+    modelPollInFlight = false;
+  }
 }
 
 function formatDateTime(value: string) {

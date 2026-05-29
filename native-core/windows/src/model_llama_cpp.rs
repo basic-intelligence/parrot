@@ -1,8 +1,13 @@
 use crate::models::downloads::{model_path, windows_descriptor_for};
 use anyhow::{anyhow, Context};
-use llama_cpp::{
-    standard_sampler::{SamplerStage, StandardSampler},
-    LlamaModel, LlamaParams, SessionParams,
+use llama_cpp_2::{
+    context::params::LlamaContextParams,
+    llama_backend::LlamaBackend,
+    llama_batch::LlamaBatch,
+    model::{params::LlamaModelParams, AddBos, LlamaModel},
+    sampling::LlamaSampler,
+    token::LlamaToken,
+    TokenToStringError,
 };
 use parrot_language::DictationLanguageMetadata;
 use parrot_models::{ModelDescriptor, SamplerConfig};
@@ -12,16 +17,22 @@ use std::{
     collections::HashMap,
     fs::File,
     io::Read,
+    num::NonZeroU32,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
 };
 
 #[derive(Clone, Default)]
 pub struct LlamaCleanupPipeline {
-    models: Arc<Mutex<HashMap<PathBuf, Arc<LlamaModel>>>>,
+    models: Arc<Mutex<HashMap<PathBuf, Arc<LoadedCleanupModel>>>>,
+}
+
+struct LoadedCleanupModel {
+    model: LlamaModel,
+    _backend: Arc<LlamaBackend>,
 }
 
 impl LlamaCleanupPipeline {
@@ -143,8 +154,8 @@ impl LlamaCleanupPipeline {
             default_output_tokens: descriptor.output_tokens.unwrap_or(512),
         });
 
-        let model = self.model_for(&path)?;
-        let output = complete_with_model(&descriptor, model.as_ref(), &prompt, cancel_flag)?;
+        let loaded = self.model_for(&path)?;
+        let output = complete_with_model(&descriptor, &loaded, &prompt, cancel_flag)?;
         let cleaned = parrot_cleanup::sanitize(&output);
 
         if cleaned.trim().is_empty() {
@@ -154,7 +165,7 @@ impl LlamaCleanupPipeline {
         Ok(cleaned)
     }
 
-    fn model_for(&self, path: &Path) -> anyhow::Result<Arc<LlamaModel>> {
+    fn model_for(&self, path: &Path) -> anyhow::Result<Arc<LoadedCleanupModel>> {
         let key = path.to_path_buf();
 
         if let Some(model) = self
@@ -167,15 +178,14 @@ impl LlamaCleanupPipeline {
             return Ok(model);
         }
 
-        let params = LlamaParams {
-            n_gpu_layers: cleanup_gpu_layer_count(),
-            ..LlamaParams::default()
-        };
+        let backend = llama_backend()?;
+        let params = LlamaModelParams::default().with_n_gpu_layers(cleanup_gpu_layer_count());
 
-        let model = Arc::new(
-            LlamaModel::load_from_file(path, params)
+        let model = Arc::new(LoadedCleanupModel {
+            model: LlamaModel::load_from_file(backend.as_ref(), path, &params)
                 .with_context(|| format!("failed to load cleanup model {}", path.display()))?,
-        );
+            _backend: backend,
+        });
 
         let mut models = self
             .models
@@ -189,7 +199,7 @@ impl LlamaCleanupPipeline {
 
 fn complete_with_model(
     descriptor: &ModelDescriptor,
-    model: &LlamaModel,
+    loaded: &LoadedCleanupModel,
     prompt: &CleanupPrompt,
     cancel_flag: &Arc<AtomicBool>,
 ) -> anyhow::Result<String> {
@@ -197,11 +207,13 @@ fn complete_with_model(
         return Err(anyhow!("Recording cancelled."));
     }
 
+    let model = &loaded.model;
+    let backend = loaded._backend.as_ref();
     let context_tokens = descriptor.context_tokens.unwrap_or(2048).max(1) as u32;
     let max_output_tokens = prompt.max_output_tokens.max(1) as usize;
 
     let prompt_tokens = model
-        .tokenize_bytes(prompt.full_prompt.as_bytes(), true, true)
+        .str_to_token(&prompt.full_prompt, AddBos::Always)
         .context("failed to tokenize cleanup prompt")?;
 
     if prompt_tokens.len() + max_output_tokens >= context_tokens as usize {
@@ -210,47 +222,66 @@ fn complete_with_model(
         ));
     }
 
-    let threads = default_thread_count() as u32;
-    let session_params = SessionParams {
-        n_ctx: context_tokens,
-        n_batch: context_tokens,
-        n_threads: threads,
-        n_threads_batch: threads,
-        ..SessionParams::default()
-    };
+    let threads = default_thread_count() as i32;
+    let context_params = LlamaContextParams::default()
+        .with_n_ctx(NonZeroU32::new(context_tokens))
+        .with_n_batch(context_tokens)
+        .with_n_ubatch(context_tokens)
+        .with_n_threads(threads)
+        .with_n_threads_batch(threads);
 
-    let mut session = model
-        .create_session(session_params)
+    let mut context = model
+        .new_context(backend, context_params)
         .context("failed to create llama.cpp cleanup session")?;
 
-    session
-        .advance_context_with_tokens(&prompt_tokens)
+    let mut batch = LlamaBatch::new(context_tokens as usize, 1);
+    batch
+        .add_sequence(&prompt_tokens, 0, false)
+        .context("failed to batch cleanup prompt")?;
+    context
+        .decode(&mut batch)
         .context("llama.cpp failed to evaluate cleanup prompt")?;
 
     if is_cancelled(cancel_flag) {
         return Err(anyhow!("Recording cancelled."));
     }
 
-    let sampler = sampler_for(descriptor.sampler.as_ref());
-    let handle = session
-        .start_completing_with(sampler, max_output_tokens)
-        .context("llama.cpp failed to start cleanup completion")?;
+    let mut sampler = sampler_for(descriptor.sampler.as_ref());
+    sampler.accept_many(prompt_tokens.iter());
 
-    let mut output = String::new();
+    let mut output = Vec::new();
+    let mut position = prompt_tokens.len() as i32;
 
-    for piece in handle.into_strings() {
+    for _ in 0..max_output_tokens {
         if is_cancelled(cancel_flag) {
             return Err(anyhow!("Recording cancelled."));
         }
-        output.push_str(&piece);
+
+        let token = sampler.sample(&context, -1);
+        if model.is_eog_token(token) {
+            break;
+        }
+
+        sampler.accept(token);
+        output.extend(token_piece_bytes(model, token)?);
+
+        batch.clear();
+        batch
+            .add(token, position, &[0], true)
+            .context("failed to batch cleanup token")?;
+        context
+            .decode(&mut batch)
+            .context("llama.cpp failed while generating cleanup output")?;
+        position += 1;
     }
 
-    Ok(output)
+    Ok(String::from_utf8(output)
+        .unwrap_or_else(|error| String::from_utf8_lossy(&error.into_bytes()).into_owned()))
 }
 
-fn sampler_for(config: Option<&SamplerConfig>) -> StandardSampler {
+fn sampler_for(config: Option<&SamplerConfig>) -> LlamaSampler {
     let Some(config) = config else {
-        return StandardSampler::new_greedy();
+        return LlamaSampler::greedy();
     };
 
     let mut stages = Vec::new();
@@ -259,31 +290,59 @@ fn sampler_for(config: Option<&SamplerConfig>) -> StandardSampler {
         || config.frequency_penalty != 0.0
         || config.presence_penalty != 0.0
     {
-        stages.push(SamplerStage::RepetitionPenalty {
-            repetition_penalty: config.repeat_penalty.max(0.0),
-            frequency_penalty: config.frequency_penalty,
-            presence_penalty: config.presence_penalty,
-            last_n: 64,
-        });
+        stages.push(LlamaSampler::penalties(
+            64,
+            config.repeat_penalty.max(0.0),
+            config.frequency_penalty,
+            config.presence_penalty,
+        ));
     }
 
     if config.top_k > 0 {
-        stages.push(SamplerStage::TopK(config.top_k));
+        stages.push(LlamaSampler::top_k(config.top_k));
     }
 
     if config.top_p > 0.0 && config.top_p < 1.0 {
-        stages.push(SamplerStage::TopP(config.top_p.clamp(0.0, 1.0)));
+        stages.push(LlamaSampler::top_p(config.top_p.clamp(0.0, 1.0), 1));
     }
 
     if config.min_p > 0.0 {
-        stages.push(SamplerStage::MinP(config.min_p.clamp(0.0, 1.0)));
+        stages.push(LlamaSampler::min_p(config.min_p.clamp(0.0, 1.0), 1));
     }
 
-    stages.push(SamplerStage::Temperature(
-        config.temperature.clamp(0.001, 2.0),
-    ));
+    stages.push(LlamaSampler::temp(config.temperature.clamp(0.001, 2.0)));
+    stages.push(LlamaSampler::dist(1));
 
-    StandardSampler::new_softmax(stages, 1)
+    LlamaSampler::chain_simple(stages)
+}
+
+fn token_piece_bytes(model: &LlamaModel, token: LlamaToken) -> anyhow::Result<Vec<u8>> {
+    match model.token_to_piece_bytes(token, 16, false, None) {
+        Ok(bytes) => Ok(bytes),
+        Err(TokenToStringError::InsufficientBufferSpace(size)) if size < 0 => {
+            let size = size
+                .checked_neg()
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or(64);
+            model
+                .token_to_piece_bytes(token, size, false, None)
+                .context("failed to decode cleanup token")
+        }
+        Err(error) => Err(error).context("failed to decode cleanup token"),
+    }
+}
+
+fn llama_backend() -> anyhow::Result<Arc<LlamaBackend>> {
+    static BACKEND: OnceLock<Result<Arc<LlamaBackend>, String>> = OnceLock::new();
+
+    match BACKEND.get_or_init(|| {
+        LlamaBackend::init()
+            .map(Arc::new)
+            .map_err(|e| e.to_string())
+    }) {
+        Ok(backend) => Ok(Arc::clone(backend)),
+        Err(error) => Err(anyhow!(error.clone())),
+    }
 }
 
 fn descriptor_and_path(

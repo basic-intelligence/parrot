@@ -7,7 +7,7 @@ rust-version = "1.77.2"
 [dependencies]
 anyhow = { workspace = true }
 cpal = "0.15"
-llama_cpp = { version = "0.3.2", default-features = false, features = ["compat"] }
+llama-cpp-2 = { version = "0.1.146", default-features = false, features = ["dynamic-link"] }
 parrot-cleanup = { path = "../../crates/parrot-cleanup" }
 parrot-language = { path = "../../crates/parrot-language" }
 parrot-models = { path = "../../crates/parrot-models" }
@@ -19,11 +19,12 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10"
+tokio = { version = "1", features = ["rt", "time"] }
 whisper-rs = { version = "0.16.0", default-features = false }
 
 [features]
 default = []
-cuda = ["whisper-rs/cuda", "llama_cpp/cuda"]
+cuda = ["whisper-rs/cuda", "llama-cpp-2/cuda"]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.59", features = [

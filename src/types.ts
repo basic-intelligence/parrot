@@ -116,6 +116,14 @@ export type PermissionRequirement = {
   opensSettings: boolean;
 };
 
+export type LinuxHotkeyBackendKind =
+  | "x11"
+  | "compositor"
+  | "portal"
+  | "evdev"
+  | "needsSetup"
+  | "unsupported";
+
 export type PermissionSnapshot = {
   requirements?: PermissionRequirement[];
   allRequiredGranted?: boolean;
@@ -123,6 +131,7 @@ export type PermissionSnapshot = {
   accessibility?: PermissionState | null;
   inputMonitoring?: PermissionState | null;
   allGranted?: boolean | null;
+  linuxHotkeyBackend?: LinuxHotkeyBackendKind | null;
 };
 
 export type Snapshot = {
@@ -151,4 +160,3 @@ export type RecordingResultPayload = {
   cleaned: string;
   audioDurationSeconds: number;
 };
-

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": [
+      "appimage",
+      "deb"
+    ],
+    "externalBin": [
+      "binaries/parrot-core-cpu"
+    ],
+    "resources": [
+      "../native-core/shared/languages.json",
+      "../native-core/shared/models.json",
+      "../native-core/shared/prompts/",
+      "../native-core/shared/sounds.json",
+      "../native-core/shared/sounds/",
+      "binaries/libllama.so*",
+      "binaries/libggml*.so*"
+    ],
+    "createUpdaterArtifacts": false,
+    "linux": {
+      "deb": {
+        "depends": [
+          "xdotool",
+          "libxdo3",
+          "libpulse0",
+          "pipewire-pulse | pulseaudio"
+        ]
+      }
+    }
+  }
+}

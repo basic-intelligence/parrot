@@ -55,6 +55,8 @@ impl SettingsStore {
 fn current_settings_platform() -> SettingsPlatform {
     if cfg!(target_os = "windows") {
         SettingsPlatform::Windows
+    } else if cfg!(target_os = "linux") {
+        SettingsPlatform::Linux
     } else {
         SettingsPlatform::Macos
     }
@@ -88,6 +90,18 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     fn current_platform_preserves_macos_shortcut_defaults() {
         let settings = default_settings_for_platform(current_settings_platform());
+
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(settings.push_to_talk_shortcut.display_name, "F9");
+            assert_eq!(settings.push_to_talk_shortcut.linux_key_codes(), &[0xffc6]);
+            assert_eq!(settings.hands_free_shortcut.display_name, "Ctrl + Space");
+            assert_eq!(
+                settings.hands_free_shortcut.linux_key_codes(),
+                &[0xffe3, 0x20]
+            );
+            return;
+        }
 
         assert_eq!(settings.push_to_talk_shortcut.display_name, "Fn");
         assert_eq!(settings.push_to_talk_shortcut.macos_key_codes(), &[63]);

@@ -45,6 +45,7 @@ impl WhisperCppPipeline {
         self.transcribe_inner(samples_16khz, settings, paths, None)
     }
 
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub fn transcribe_with_cancel(
         &self,
         samples_16khz: &[f32],

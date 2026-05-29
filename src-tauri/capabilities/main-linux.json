@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "main-unsupported",
-  "description": "Main settings window capability for unsupported Linux foundation builds.",
+  "identifier": "main-linux",
+  "description": "Main settings window capability for Parrot on Linux.",
   "platforms": ["linux"],
   "windows": ["main"],
   "permissions": [
@@ -9,6 +9,7 @@
     "core:event:allow-unlisten",
     "core:window:allow-center",
     "core:window:allow-set-size",
+    "updater:default",
     "process:default",
     {
       "identifier": "opener:allow-open-url",
@@ -47,12 +48,14 @@
     "allow-set-launch-at-login",
     "allow-set-update-badge",
     "allow-download-model",
+    "allow-model-statuses",
     "allow-delete-model",
     "allow-warm-models",
     "allow-start-test-dictation",
     "allow-stop-test-dictation",
     "allow-set-hotkey-monitor-enabled",
     "allow-capture-shortcut",
+    "allow-install-linux-shortcuts",
     "allow-permission-statuses",
     "allow-request-permission",
     "allow-save-recording-result",

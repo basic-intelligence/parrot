@@ -43,6 +43,10 @@ name = "capture_shortcut"
 window = "main"
 
 [[command]]
+name = "install_linux_shortcuts"
+window = "main"
+
+[[command]]
 name = "permission_statuses"
 window = "main"
 

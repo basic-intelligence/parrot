@@ -214,6 +214,26 @@ pub fn permission_value_all_granted(value: &serde_json::Value) -> bool {
     microphone == Some("granted") && accessibility == Some("granted")
 }
 
+pub fn permission_value_hotkey_monitor_ready(value: &serde_json::Value) -> bool {
+    permission_value_all_granted(value)
+        && permission_requirement_state(value, "globalShortcut")
+            .map(|state| state == "granted")
+            .unwrap_or(true)
+}
+
+fn permission_requirement_state<'a>(value: &'a serde_json::Value, kind: &str) -> Option<&'a str> {
+    value
+        .get("requirements")
+        .and_then(|value| value.as_array())
+        .and_then(|requirements| {
+            requirements.iter().find_map(|requirement| {
+                (requirement.get("kind").and_then(|value| value.as_str()) == Some(kind))
+                    .then(|| requirement.get("state").and_then(|value| value.as_str()))
+                    .flatten()
+            })
+        })
+}
+
 async fn initialize_core_from_state(state: &State<'_, AppState>) -> anyhow::Result<()> {
     let runtime = state.runtime().await?;
     let settings = runtime.settings.lock().await.settings.clone();
@@ -226,7 +246,7 @@ async fn restart_hotkey_monitor_if_ready(state: &State<'_, AppState>) -> anyhow:
         .core
         .request(NativeCoreMethod::PermissionStatuses, json!({}))
         .await?;
-    if permission_value_all_granted(&permissions) {
+    if permission_value_hotkey_monitor_ready(&permissions) {
         let value = runtime
             .core
             .request(NativeCoreMethod::StartHotkeyMonitor, json!({}))
@@ -335,18 +355,25 @@ pub async fn set_update_badge(
 
 #[tauri::command]
 pub async fn download_model(
-    app: AppHandle,
     state: State<'_, AppState>,
     kind: String,
-) -> Result<AppSnapshot, String> {
-    core_request_recovering(
+) -> Result<Vec<ModelStatus>, String> {
+    let models = core_request_recovering(
         &state,
         NativeCoreMethod::DownloadModel,
         json!({ "kind": kind }),
     )
     .await
     .map_err(|e| e.to_string())?;
-    snapshot(&app, &state).await.map_err(|e| e.to_string())
+    serde_json::from_value(models).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn model_statuses(state: State<'_, AppState>) -> Result<Vec<ModelStatus>, String> {
+    let models = core_request_recovering(&state, NativeCoreMethod::ModelStatuses, json!({}))
+        .await
+        .map_err(|e| e.to_string())?;
+    serde_json::from_value(models).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -423,6 +450,16 @@ pub async fn set_hotkey_monitor_enabled(
     state: State<'_, AppState>,
     enabled: bool,
 ) -> Result<(), String> {
+    if enabled {
+        let permissions =
+            core_request_recovering(&state, NativeCoreMethod::PermissionStatuses, json!({}))
+                .await
+                .map_err(|e| e.to_string())?;
+        if !permission_value_hotkey_monitor_ready(&permissions) {
+            return Ok(());
+        }
+    }
+
     let method = if enabled {
         NativeCoreMethod::StartHotkeyMonitor
     } else {
@@ -463,6 +500,23 @@ pub async fn capture_shortcut(
 }
 
 #[tauri::command]
+pub async fn install_linux_shortcuts(state: State<'_, AppState>) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let runtime = state.runtime().await.map_err(|e| e.to_string())?;
+        let settings = runtime.settings.lock().await.settings.clone();
+        crate::linux_shortcuts::install_hyprland_shortcuts(&settings).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = state;
+        Err("Linux shortcuts can only be installed on Linux.".into())
+    }
+}
+
+#[tauri::command]
 pub async fn permission_statuses(state: State<'_, AppState>) -> Result<PermissionSnapshot, String> {
     permission_snapshot(&state).await.map_err(|e| e.to_string())
 }
@@ -474,17 +528,9 @@ pub async fn request_permission(
     kind: String,
     open_settings: Option<bool>,
 ) -> Result<PermissionSnapshot, String> {
-    let permission_kind: PermissionKind =
+    let _permission_kind: PermissionKind =
         serde_json::from_value(serde_json::Value::String(kind.clone()))
             .map_err(|_| "Unknown permission kind.".to_string())?;
-    if !matches!(
-        permission_kind,
-        PermissionKind::Microphone
-            | PermissionKind::Accessibility
-            | PermissionKind::InputMonitoring
-    ) {
-        return Err("Unknown permission kind.".to_string());
-    }
 
     let open_settings = open_settings.unwrap_or(false);
 
@@ -727,6 +773,36 @@ mod tests {
         assert_eq!(output["requirements"].as_array().unwrap().len(), 1);
         assert_eq!(output["requirements"][0]["kind"], "microphone");
         assert_eq!(output["allRequiredGranted"], true);
+    }
+
+    #[test]
+    fn hotkey_monitor_readiness_respects_linux_global_shortcut_state() {
+        let value = serde_json::json!({
+            "requirements": [
+                {
+                    "kind": "microphone",
+                    "title": "Microphone",
+                    "description": "Record your voice locally for dictation.",
+                    "state": "granted",
+                    "required": true,
+                    "requestable": false,
+                    "opensSettings": false
+                },
+                {
+                    "kind": "globalShortcut",
+                    "title": "Global shortcut",
+                    "description": "Listen for the configured dictation shortcuts.",
+                    "state": "granted",
+                    "required": false,
+                    "requestable": false,
+                    "opensSettings": false
+                }
+            ],
+            "allRequiredGranted": true
+        });
+
+        assert!(permission_value_all_granted(&value));
+        assert!(permission_value_hotkey_monitor_ready(&value));
     }
 
     #[test]

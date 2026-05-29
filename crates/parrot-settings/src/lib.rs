@@ -1,6 +1,7 @@
 use parrot_language::canonical_language_code;
 pub use parrot_protocol::{
-    default_hands_free_shortcut, default_push_to_talk_shortcut,
+    default_hands_free_shortcut, default_linux_hands_free_shortcut,
+    default_linux_push_to_talk_shortcut, default_push_to_talk_shortcut,
     default_windows_hands_free_shortcut, default_windows_push_to_talk_shortcut, AppSettings,
     DictationLanguageMode, DictionaryEntry, ShortcutChord, ShortcutKey, ShortcutMode,
     ShortcutModifier, ShortcutPlatformCodes, ShortcutSettings, DEFAULT_CLEANUP_MODEL_ID,
@@ -13,6 +14,7 @@ use uuid::Uuid;
 pub enum SettingsPlatform {
     Macos,
     Windows,
+    Linux,
 }
 
 const OLD_WINDOWS_HANDS_FREE_DEFAULT_KEYS: &[u16] = &[17, 18, 32];
@@ -184,6 +186,29 @@ pub fn normalize_shortcuts_for_platform(
                 settings.hands_free_shortcut = default_windows_hands_free_shortcut();
             }
         }
+        SettingsPlatform::Linux => {
+            if settings.push_to_talk_shortcut.linux_key_codes().is_empty()
+                || settings
+                    .push_to_talk_shortcut
+                    .display_name
+                    .trim()
+                    .is_empty()
+            {
+                settings.push_to_talk_shortcut = linux_shortcut_or_default(
+                    &settings.push_to_talk_shortcut,
+                    default_linux_push_to_talk_shortcut(),
+                );
+            }
+
+            if settings.hands_free_shortcut.linux_key_codes().is_empty()
+                || settings.hands_free_shortcut.display_name.trim().is_empty()
+            {
+                settings.hands_free_shortcut = linux_shortcut_or_default(
+                    &settings.hands_free_shortcut,
+                    default_linux_hands_free_shortcut(),
+                );
+            }
+        }
     }
 
     if !matches!(settings.push_to_talk_shortcut.mode, ShortcutMode::Hold) {
@@ -218,6 +243,30 @@ fn windows_shortcut_or_default(
         macos_key_codes: None,
         windows_virtual_keys: Some(keys),
         linux_key_codes: None,
+    };
+    shortcut
+}
+
+fn linux_shortcut_or_default(
+    shortcut: &ShortcutSettings,
+    fallback: ShortcutSettings,
+) -> ShortcutSettings {
+    if is_macos_default_shortcut(shortcut) {
+        return fallback;
+    }
+
+    let Some(keys) = linux_key_codes_from_chord(shortcut.chord.as_ref(), &shortcut.mode) else {
+        return fallback;
+    };
+
+    let mut shortcut = shortcut.clone();
+    if shortcut.display_name.trim().is_empty() {
+        shortcut.display_name = display_name_for_linux_keys(&keys);
+    }
+    shortcut.platform_codes = ShortcutPlatformCodes {
+        macos_key_codes: None,
+        windows_virtual_keys: None,
+        linux_key_codes: Some(keys),
     };
     shortcut
 }
@@ -302,6 +351,100 @@ fn windows_virtual_key_for_key(key: &ShortcutKey) -> Option<u16> {
         ShortcutKey::ArrowDown => Some(40),
         ShortcutKey::Delete => Some(46),
     }
+}
+
+fn linux_key_codes_from_chord(
+    chord: Option<&ShortcutChord>,
+    mode: &ShortcutMode,
+) -> Option<Vec<u32>> {
+    let chord = chord?;
+    let mut keys = Vec::new();
+    for modifier in &chord.modifiers {
+        match modifier {
+            ShortcutModifier::Control => keys.push(0xffe3),
+            ShortcutModifier::Alt | ShortcutModifier::Option => keys.push(0xffe9),
+            ShortcutModifier::Shift => keys.push(0xffe1),
+            ShortcutModifier::Meta | ShortcutModifier::Command => keys.push(0xffeb),
+            ShortcutModifier::Fn => return None,
+        }
+    }
+
+    if let Some(key) = &chord.key {
+        keys.push(linux_key_code_for_key(key)?);
+    } else if matches!(mode, ShortcutMode::Hold) {
+        return None;
+    } else {
+        return None;
+    }
+
+    keys.sort_by_key(|key| linux_key_sort_key(*key));
+    keys.dedup();
+    Some(keys)
+}
+
+fn linux_key_code_for_key(key: &ShortcutKey) -> Option<u32> {
+    match key {
+        ShortcutKey::Space => Some(0x20),
+        ShortcutKey::Return => Some(0xff0d),
+        ShortcutKey::Tab => Some(0xff09),
+        ShortcutKey::Escape => None,
+        ShortcutKey::Character(value) => value
+            .chars()
+            .next()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .map(|character| character.to_ascii_lowercase() as u32),
+        ShortcutKey::Function(number) if (1..=24).contains(number) => {
+            Some(0xffbe + u32::from(*number) - 1)
+        }
+        ShortcutKey::Function(_) => None,
+        ShortcutKey::ArrowLeft => Some(0xff51),
+        ShortcutKey::ArrowUp => Some(0xff52),
+        ShortcutKey::ArrowRight => Some(0xff53),
+        ShortcutKey::ArrowDown => Some(0xff54),
+        ShortcutKey::Delete => Some(0xffff),
+    }
+}
+
+fn linux_key_sort_key(key: u32) -> (u8, u32) {
+    let rank = match key {
+        0xffe3 | 0xffe4 => 0,
+        0xffe9 | 0xffea => 1,
+        0xffe1 | 0xffe2 => 2,
+        0xffeb | 0xffec => 3,
+        _ => 4,
+    };
+    (rank, key)
+}
+
+fn display_name_for_linux_keys(keys: &[u32]) -> String {
+    keys.iter()
+        .map(|key| match *key {
+            0x20 => "Space".to_string(),
+            0xff09 => "Tab".to_string(),
+            0xff0d => "Enter".to_string(),
+            0xff51 => "Left Arrow".to_string(),
+            0xff52 => "Up Arrow".to_string(),
+            0xff53 => "Right Arrow".to_string(),
+            0xff54 => "Down Arrow".to_string(),
+            0xffff => "Delete".to_string(),
+            0xffe1 | 0xffe2 => "Shift".to_string(),
+            0xffe3 | 0xffe4 => "Ctrl".to_string(),
+            0xffe9 | 0xffea => "Alt".to_string(),
+            0xffeb | 0xffec => "Meta".to_string(),
+            key if (0xffbe..=0xffd5).contains(&key) => format!("F{}", key - 0xffbe + 1),
+            key if (b'0' as u32..=b'9' as u32).contains(&key)
+                || (b'a' as u32..=b'z' as u32).contains(&key)
+                || (b'A' as u32..=b'Z' as u32).contains(&key) =>
+            {
+                char::from_u32(key)
+                    .unwrap_or('?')
+                    .to_ascii_uppercase()
+                    .to_string()
+            }
+            key => format!("Key {key:#x}"),
+        })
+        .collect::<Vec<_>>()
+        .join(" + ")
 }
 
 fn windows_key_sort_key(key: u16) -> (u8, u16) {
@@ -582,6 +725,46 @@ mod tests {
             windows.hands_free_shortcut.windows_virtual_keys(),
             &[162, 32]
         );
+
+        let linux = default_settings_for_platform(SettingsPlatform::Linux);
+        assert_eq!(linux.push_to_talk_shortcut.display_name, "F9");
+        assert_eq!(linux.push_to_talk_shortcut.linux_key_codes(), &[0xffc6]);
+        assert_eq!(linux.hands_free_shortcut.display_name, "Ctrl + Space");
+        assert_eq!(linux.hands_free_shortcut.linux_key_codes(), &[0xffe3, 0x20]);
+    }
+
+    #[test]
+    fn normalizes_old_macos_shortcuts_to_linux_defaults() {
+        let mut settings = AppSettings {
+            push_to_talk_shortcut: serde_json::from_value(serde_json::json!({
+                "displayName": "Fn",
+                "macosKeyCodes": [63],
+                "mode": "hold"
+            }))
+            .unwrap(),
+            hands_free_shortcut: serde_json::from_value(serde_json::json!({
+                "displayName": "Control + Space",
+                "macosKeyCodes": [59, 49],
+                "mode": "toggle"
+            }))
+            .unwrap(),
+            ..AppSettings::default()
+        };
+
+        assert!(normalize_shortcuts_for_platform(
+            &mut settings,
+            SettingsPlatform::Linux
+        ));
+
+        assert_eq!(settings.push_to_talk_shortcut.display_name, "F9");
+        assert_eq!(settings.push_to_talk_shortcut.linux_key_codes(), &[0xffc6]);
+        assert!(settings.push_to_talk_shortcut.macos_key_codes().is_empty());
+        assert_eq!(settings.hands_free_shortcut.display_name, "Ctrl + Space");
+        assert_eq!(
+            settings.hands_free_shortcut.linux_key_codes(),
+            &[0xffe3, 0x20]
+        );
+        assert!(settings.hands_free_shortcut.macos_key_codes().is_empty());
     }
 
     #[test]

@@ -159,7 +159,7 @@ cat > "$HELPER_CONTENTS/Info.plist" <<PLIST
     <key>CFBundleName</key>
     <string>Parrot Core</string>
     <key>CFBundleDisplayName</key>
-    <string>Parrot Core</string>
+    <string>Parrot</string>
     <key>CFBundleIdentifier</key>
     <string>in.basic.parrot.core</string>
     <key>CFBundleExecutable</key>

@@ -366,6 +366,32 @@ mod tests {
     }
 
     #[test]
+    fn linux_speech_models_use_whisper_cpp() {
+        let english = speech_model_for(
+            SpeechModelSlot::Speech,
+            Platform::Linux,
+            Architecture::X86_64,
+        )
+        .unwrap();
+        let multilingual = speech_model_for(
+            SpeechModelSlot::SpeechMultilingual,
+            Platform::Linux,
+            Architecture::X86_64,
+        )
+        .unwrap();
+
+        assert_eq!(english.public_id, "speech");
+        assert_eq!(english.runtime, ModelRuntime::Whispercpp);
+        assert_eq!(english.file_name.as_deref(), Some("ggml-small.en-q5_1.bin"));
+        assert_eq!(multilingual.public_id, "speech-multilingual");
+        assert_eq!(multilingual.runtime, ModelRuntime::Whispercpp);
+        assert_eq!(
+            multilingual.file_name.as_deref(),
+            Some("ggml-small-q5_1.bin")
+        );
+    }
+
+    #[test]
     fn public_id_lookup_can_disambiguate_platform_variants() {
         let apple_speech =
             model_for_public_id("speech", Platform::Macos, Architecture::AppleSilicon).unwrap();
@@ -408,6 +434,32 @@ mod tests {
     }
 
     #[test]
+    fn linux_cleanup_models_use_llama_cpp() {
+        let cleanup = required_models(
+            &DictationLanguageSettings {
+                dictation_language_mode: DictationLanguageMode::English,
+                dictation_language_code: None,
+                cleanup_model_id: "cleanup".into(),
+            },
+            Platform::Linux,
+            Architecture::X86_64,
+        )
+        .into_iter()
+        .find(|model| model.role == ModelRole::Cleanup)
+        .unwrap();
+
+        let gemma = cleanup_model_for("cleanup-gemma-4-e2b").unwrap();
+
+        assert_eq!(cleanup.public_id, "cleanup");
+        assert_eq!(cleanup.runtime, ModelRuntime::LlamaCpp);
+        assert!(cleanup.platforms.contains(&Platform::Linux));
+        assert!(cleanup.architectures.contains(&Architecture::X86_64));
+        assert_eq!(gemma.runtime, ModelRuntime::LlamaCpp);
+        assert!(gemma.platforms.contains(&Platform::Linux));
+        assert!(gemma.architectures.contains(&Architecture::X86_64));
+    }
+
+    #[test]
     fn windows_required_models_follow_language_routing() {
         let english = required_models(
             &DictationLanguageSettings {
@@ -434,6 +486,62 @@ mod tests {
                 cleanup_model_id: "cleanup".into(),
             },
             Platform::Windows,
+            Architecture::X86_64,
+        );
+
+        assert_eq!(english[0].public_id, "speech");
+        assert_eq!(detect[0].public_id, "speech-multilingual");
+        assert_eq!(spanish[0].public_id, "speech-multilingual");
+        assert_eq!(
+            english
+                .iter()
+                .filter(|model| model.role == ModelRole::Speech)
+                .count(),
+            1
+        );
+        assert_eq!(
+            detect
+                .iter()
+                .filter(|model| model.role == ModelRole::Speech)
+                .count(),
+            1
+        );
+        assert_eq!(
+            spanish
+                .iter()
+                .filter(|model| model.role == ModelRole::Speech)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn linux_required_models_follow_language_routing() {
+        let english = required_models(
+            &DictationLanguageSettings {
+                dictation_language_mode: DictationLanguageMode::English,
+                dictation_language_code: None,
+                cleanup_model_id: "cleanup".into(),
+            },
+            Platform::Linux,
+            Architecture::X86_64,
+        );
+        let detect = required_models(
+            &DictationLanguageSettings {
+                dictation_language_mode: DictationLanguageMode::Detect,
+                dictation_language_code: None,
+                cleanup_model_id: "cleanup".into(),
+            },
+            Platform::Linux,
+            Architecture::X86_64,
+        );
+        let spanish = required_models(
+            &DictationLanguageSettings {
+                dictation_language_mode: DictationLanguageMode::Specific,
+                dictation_language_code: Some("es".into()),
+                cleanup_model_id: "cleanup".into(),
+            },
+            Platform::Linux,
             Architecture::X86_64,
         );
 

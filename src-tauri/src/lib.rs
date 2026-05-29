@@ -1,6 +1,10 @@
 mod commands;
 mod core_bridge;
 mod history;
+#[cfg(any(target_os = "linux", test))]
+mod hyprland;
+#[cfg(any(target_os = "linux", test))]
+mod linux_shortcuts;
 mod settings;
 mod tray;
 
@@ -78,17 +82,96 @@ fn sync_launch_at_login(app: &AppHandle, settings: &mut SettingsStore) -> anyhow
     Ok(())
 }
 
+#[cfg(any(target_os = "linux", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExternalRecordAction {
+    Start,
+    Stop,
+    Toggle,
+    Cancel,
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn external_record_action(args: &[String]) -> Option<ExternalRecordAction> {
+    let normalized = args.iter().map(String::as_str).collect::<Vec<_>>();
+
+    for window in normalized.windows(2) {
+        match window {
+            ["record", "start"] | ["--record", "start"] => {
+                return Some(ExternalRecordAction::Start);
+            }
+            ["record", "stop"] | ["--record", "stop"] => {
+                return Some(ExternalRecordAction::Stop);
+            }
+            ["record", "toggle"] | ["--record", "toggle"] => {
+                return Some(ExternalRecordAction::Toggle);
+            }
+            ["record", "cancel"] | ["--record", "cancel"] => {
+                return Some(ExternalRecordAction::Cancel);
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn native_method_for_record_action(action: ExternalRecordAction) -> NativeCoreMethod {
+    match action {
+        ExternalRecordAction::Start => NativeCoreMethod::StartHotkeyRecording,
+        ExternalRecordAction::Stop => NativeCoreMethod::StopHotkeyRecording,
+        ExternalRecordAction::Toggle => NativeCoreMethod::ToggleHotkeyRecording,
+        ExternalRecordAction::Cancel => NativeCoreMethod::CancelHotkeyRecording,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn dispatch_external_record_action(app: AppHandle, action: ExternalRecordAction) {
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        let runtime = match state.runtime().await {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                eprintln!("Linux record command ignored; app is not ready: {error}");
+                return;
+            }
+        };
+
+        if let Err(error) = runtime
+            .core
+            .request(
+                native_method_for_record_action(action),
+                serde_json::json!({}),
+            )
+            .await
+        {
+            eprintln!("Linux record command failed: {error}");
+            let _ = app.emit(
+                "parrot:hotkey-monitor-failed",
+                serde_json::json!({ "error": error.to_string() }),
+            );
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init());
 
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
     builder
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            #[cfg(target_os = "linux")]
+            if let Some(action) = external_record_action(&args) {
+                dispatch_external_record_action(app.clone(), action);
+                return;
+            }
+
             if !args.iter().any(|arg| arg == "--background") {
                 show_main_window(app);
             }
@@ -106,7 +189,20 @@ pub fn run() {
                 app.set_dock_visibility(false);
             }
 
-            let launch_in_background = std::env::args().any(|arg| arg == "--background");
+            let args = std::env::args().collect::<Vec<_>>();
+            #[cfg(target_os = "linux")]
+            let pending_record_action = external_record_action(&args);
+            let launch_in_background = args.iter().any(|arg| arg == "--background")
+                || {
+                    #[cfg(target_os = "linux")]
+                    {
+                        pending_record_action.is_some()
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        false
+                    }
+                };
             tray::install(app.handle())?;
 
             let app_handle = app.handle().clone();
@@ -141,29 +237,55 @@ pub fn run() {
                 core: core.clone(),
             })?;
 
-            let core_for_boot = core.clone();
-            let app_for_boot = app_handle.clone();
-            tauri::async_runtime::spawn(async move {
-                let permissions = core_for_boot
-                    .request(NativeCoreMethod::PermissionStatuses, serde_json::json!({}))
-                    .await
-                    .ok();
+            #[cfg(target_os = "linux")]
+            if let Some(action) = pending_record_action {
+                dispatch_external_record_action(app_handle.clone(), action);
+            }
 
-                let all_ready = permissions
-                    .as_ref()
-                    .map(permission_value_all_granted)
-                    .unwrap_or(false);
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            {
+                let core_for_boot = core.clone();
+                let app_for_boot = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let permissions = core_for_boot
+                        .request(NativeCoreMethod::PermissionStatuses, serde_json::json!({}))
+                        .await
+                        .ok();
 
-                if all_ready {
-                    let result = core_for_boot
-                        .request(NativeCoreMethod::StartHotkeyMonitor, serde_json::json!({}))
-                        .await;
+                    let all_ready = permissions
+                        .as_ref()
+                        .map(permission_value_hotkey_monitor_ready)
+                        .unwrap_or(false);
 
-                    match result {
-                        Ok(value) => {
-                            let status = value.get("status").and_then(|value| value.as_str());
-                            if status != Some("hotkey-monitoring") {
-                                let message = "Shortcut monitor did not start. Check Accessibility permission. Some Macs may also require Input Monitoring.";
+                    if all_ready {
+                        let result = core_for_boot
+                            .request(NativeCoreMethod::StartHotkeyMonitor, serde_json::json!({}))
+                            .await;
+
+                        match result {
+                            Ok(value) => {
+                                let status = value.get("status").and_then(|value| value.as_str());
+                                if status != Some("hotkey-monitoring") {
+                                    let message = if cfg!(target_os = "linux") {
+                                        "Shortcut monitor did not start on Linux. Use compositor shortcuts, the XDG GlobalShortcuts portal, or the evdev fallback.".to_string()
+                                    } else {
+                                        "Shortcut monitor did not start. Check Accessibility permission. Some Macs may also require Input Monitoring.".to_string()
+                                    };
+                                    eprintln!("{message}");
+                                    let _ = app_for_boot.emit(
+                                        "parrot:hotkey-monitor-failed",
+                                        serde_json::json!({ "error": message }),
+                                    );
+                                }
+                            }
+                            Err(error) => {
+                                let message = if cfg!(target_os = "linux") {
+                                    format!(
+                                        "Shortcut monitor did not start on Linux: {error}. Use compositor shortcuts, the XDG GlobalShortcuts portal, or the evdev fallback."
+                                    )
+                                } else {
+                                    format!("Shortcut monitor did not start: {error}")
+                                };
                                 eprintln!("{message}");
                                 let _ = app_for_boot.emit(
                                     "parrot:hotkey-monitor-failed",
@@ -171,29 +293,21 @@ pub fn run() {
                                 );
                             }
                         }
-                        Err(error) => {
-                            let message = format!("Shortcut monitor did not start: {error}");
-                            eprintln!("{message}");
-                            let _ = app_for_boot.emit(
-                                "parrot:hotkey-monitor-failed",
-                                serde_json::json!({ "error": message }),
-                            );
+
+                        #[cfg(target_os = "windows")]
+                        if warm_models_on_boot {
+                            if let Err(error) = core_for_boot
+                                .request(NativeCoreMethod::WarmModels, serde_json::json!({}))
+                                .await
+                            {
+                                eprintln!("Windows model warmup failed: {error}");
+                            }
                         }
                     }
 
-                    #[cfg(target_os = "windows")]
-                    if warm_models_on_boot {
-                        if let Err(error) = core_for_boot
-                            .request(NativeCoreMethod::WarmModels, serde_json::json!({}))
-                            .await
-                        {
-                            eprintln!("Windows model warmup failed: {error}");
-                        }
-                    }
-                }
-
-                // Fresh setup warms models explicitly before completing onboarding.
-            });
+                    // Fresh setup warms models explicitly before completing onboarding.
+                });
+            }
 
             if should_show_main_window {
                 show_main_window(&app_handle);
@@ -214,12 +328,14 @@ pub fn run() {
             set_launch_at_login,
             set_update_badge,
             download_model,
+            model_statuses,
             delete_model,
             warm_models,
             start_test_dictation,
             stop_test_dictation,
             set_hotkey_monitor_enabled,
             capture_shortcut,
+            install_linux_shortcuts,
             permission_statuses,
             request_permission,
             save_recording_result,
@@ -228,4 +344,53 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Parrot");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn external_record_action_parses_subcommands() {
+        assert_eq!(
+            external_record_action(&args(&["parrot", "record", "start"])),
+            Some(ExternalRecordAction::Start)
+        );
+        assert_eq!(
+            external_record_action(&args(&["parrot", "record", "stop"])),
+            Some(ExternalRecordAction::Stop)
+        );
+        assert_eq!(
+            external_record_action(&args(&["parrot", "record", "toggle"])),
+            Some(ExternalRecordAction::Toggle)
+        );
+        assert_eq!(
+            external_record_action(&args(&["parrot", "record", "cancel"])),
+            Some(ExternalRecordAction::Cancel)
+        );
+    }
+
+    #[test]
+    fn external_record_action_parses_record_flag() {
+        assert_eq!(
+            external_record_action(&args(&["parrot", "--record", "start"])),
+            Some(ExternalRecordAction::Start)
+        );
+        assert_eq!(
+            external_record_action(&args(&["parrot", "--record", "stop"])),
+            Some(ExternalRecordAction::Stop)
+        );
+    }
+
+    #[test]
+    fn record_actions_map_to_native_methods() {
+        assert_eq!(
+            native_method_for_record_action(ExternalRecordAction::Toggle),
+            NativeCoreMethod::ToggleHotkeyRecording
+        );
+    }
 }

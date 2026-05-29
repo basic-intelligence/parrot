@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppSettings,
   DictationResult,
+  ModelStatus,
   PermissionKind,
   PermissionSnapshot,
   RecordingResultPayload,
@@ -26,7 +27,11 @@ export function setUpdateBadge(available: boolean, version: string | null) {
 }
 
 export function downloadModel(kind: string) {
-  return invoke<Snapshot>("download_model", { kind });
+  return invoke<ModelStatus[]>("download_model", { kind });
+}
+
+export function modelStatuses() {
+  return invoke<ModelStatus[]>("model_statuses");
 }
 
 export function deleteModel(kind: string) {
@@ -74,4 +79,8 @@ export function deleteHistoryItem(id: string) {
 
 export function captureShortcut(target: string) {
   return invoke<ShortcutSettings>("capture_shortcut", { target });
+}
+
+export function installLinuxShortcuts() {
+  return invoke<void>("install_linux_shortcuts");
 }
