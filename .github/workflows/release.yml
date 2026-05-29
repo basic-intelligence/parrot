@@ -90,7 +90,7 @@ jobs:
             - Windows: download the `-setup.exe` installer
             - Linux: download the `.AppImage` or `.deb`
 
-            Note: Windows builds are unsigned for this release, so Windows may show an "Unknown publisher" warning.
+            Note: Windows builds are unsigned and CPU-only for this release, so Windows may show an "Unknown publisher" warning.
 
             Existing users can update from inside Parrot.
           releaseDraft: true
@@ -156,7 +156,7 @@ jobs:
 
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          PARROT_WINDOWS_CORE_VARIANTS: cpu,cuda
+          PARROT_WINDOWS_CORE_VARIANTS: cpu
         with:
           tagName: v__VERSION__
           releaseName: "Parrot v__VERSION__"
@@ -167,7 +167,7 @@ jobs:
             - Windows: download the `-setup.exe` installer
             - Linux: download the `.AppImage` or `.deb`
 
-            Note: Windows builds are unsigned for this release, so Windows may show an "Unknown publisher" warning.
+            Note: Windows builds are unsigned and CPU-only for this release, so Windows may show an "Unknown publisher" warning.
 
             Existing users can update from inside Parrot.
           releaseDraft: true
@@ -261,7 +261,7 @@ jobs:
             - Windows: download the `-setup.exe` installer
             - Linux: download the `.AppImage` or `.deb`
 
-            Note: Windows builds are unsigned for this release, so Windows may show an "Unknown publisher" warning.
+            Note: Windows builds are unsigned and CPU-only for this release, so Windows may show an "Unknown publisher" warning.
 
             Existing users can update from inside Parrot.
           releaseDraft: true
