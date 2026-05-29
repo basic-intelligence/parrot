@@ -10,6 +10,8 @@ jobs:
   linux:
     name: Linux
     runs-on: ubuntu-22.04
+    env:
+      APPIMAGE_EXTRACT_AND_RUN: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +43,9 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             cmake \
-            pkg-config
+            pkg-config \
+            patchelf \
+            libfuse2
 
       - name: Install dependencies
         run: npm ci
@@ -68,7 +72,11 @@ jobs:
 
       - name: Verify Linux bundle artifacts
         run: |
-          bundle_dir="src-tauri/target/x86_64-unknown-linux-gnu/release/bundle"
+          bundle_dir="target/x86_64-unknown-linux-gnu/release/bundle"
+          if [[ ! -d "$bundle_dir" ]]; then
+            bundle_dir="src-tauri/target/x86_64-unknown-linux-gnu/release/bundle"
+          fi
+          test -d "$bundle_dir"
           find "$bundle_dir" -type f -name "*.AppImage" -print -quit | grep -q .
           find "$bundle_dir" -type f -name "*.deb" -print -quit | grep -q .
 

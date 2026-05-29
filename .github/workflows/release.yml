@@ -192,6 +192,8 @@ jobs:
 
     runs-on: ubuntu-22.04
     needs: release-windows
+    env:
+      APPIMAGE_EXTRACT_AND_RUN: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -223,7 +225,9 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             cmake \
-            pkg-config
+            pkg-config \
+            patchelf \
+            libfuse2
 
       - name: Install dependencies
         run: npm ci
