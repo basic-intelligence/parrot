@@ -1,5 +1,125 @@
 use regex::RegexBuilder;
 
+pub fn strip_non_speech_annotations(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut index = 0;
+
+    while index < input.len() {
+        let Some(character) = input[index..].chars().next() else {
+            break;
+        };
+
+        let close = match character {
+            '[' => Some(']'),
+            '(' => Some(')'),
+            _ => None,
+        };
+
+        if let Some(close) = close {
+            let open_end = index + character.len_utf8();
+            if let Some(relative_close) = input[open_end..].find(close) {
+                let close_index = open_end + relative_close;
+                let inner = &input[open_end..close_index];
+                if is_non_speech_annotation(inner) {
+                    index = close_index + close.len_utf8();
+                    continue;
+                }
+            }
+        }
+
+        output.push(character);
+        index += character.len_utf8();
+    }
+
+    normalize_annotation_spacing(&output)
+}
+
+fn is_non_speech_annotation(value: &str) -> bool {
+    if is_music_note_only(value) {
+        return true;
+    }
+
+    matches!(
+        normalize_annotation_label(value).as_str(),
+        "applause"
+            | "background music"
+            | "background noise"
+            | "beep"
+            | "beeping"
+            | "blank audio"
+            | "breath"
+            | "breathing"
+            | "clapping"
+            | "cough"
+            | "coughing"
+            | "inaudible"
+            | "instrumental music"
+            | "laugh"
+            | "laughing"
+            | "laughter"
+            | "music"
+            | "music playing"
+            | "no speech"
+            | "noise"
+            | "silence"
+            | "silent"
+            | "sneeze"
+            | "sneezing"
+            | "static"
+            | "unintelligible"
+    )
+}
+
+fn normalize_annotation_label(value: &str) -> String {
+    value
+        .trim()
+        .trim_matches(|character: char| {
+            character.is_ascii_punctuation() || matches!(character, '“' | '”' | '‘' | '’' | '…')
+        })
+        .chars()
+        .map(|character| match character {
+            '_' | '-' | '–' | '—' => ' ',
+            character => character,
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn is_music_note_only(value: &str) -> bool {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    let mut saw_note = false;
+    for character in trimmed.chars() {
+        if matches!(character, '♪' | '♫' | '♬' | '♩' | '♭' | '♯') {
+            saw_note = true;
+            continue;
+        }
+
+        if character.is_whitespace() || matches!(character, '.' | ',' | '-' | '–' | '—') {
+            continue;
+        }
+
+        return false;
+    }
+
+    saw_note
+}
+
+fn normalize_annotation_spacing(text: &str) -> String {
+    let mut cleaned = regex_replace(r"[ \t]+([.,!?;:])", text, "$1");
+    cleaned = regex_replace(r"[ \t]{2,}", &cleaned, " ");
+    cleaned = regex_replace(r"[ \t]+\n", &cleaned, "\n");
+    cleaned = regex_replace(r"\n[ \t]+", &cleaned, "\n");
+    cleaned = regex_replace(r"\n{3,}", &cleaned, "\n\n");
+    cleaned.trim().to_string()
+}
+
 pub fn sanitize(output: &str) -> String {
     let mut cleaned = regex_replace(r"<\|channel\>\s*thought\s*.*?<channel\|>", output, "");
     cleaned = regex_replace(r"<\|channel\>.*?<channel\|>", &cleaned, "");
@@ -255,6 +375,23 @@ mod tests {
         for fixture in fixtures {
             assert_eq!(
                 sanitize(&fixture.input),
+                fixture.expected,
+                "{}",
+                fixture.name
+            );
+        }
+    }
+
+    #[test]
+    fn matches_shared_transcript_sanitizer_fixtures() {
+        let fixtures: Vec<Fixture> = serde_json::from_str(include_str!(
+            "../../../native-core/shared/test-fixtures/transcript-sanitizer.json"
+        ))
+        .unwrap();
+
+        for fixture in fixtures {
+            assert_eq!(
+                strip_non_speech_annotations(&fixture.input),
                 fixture.expected,
                 "{}",
                 fixture.name

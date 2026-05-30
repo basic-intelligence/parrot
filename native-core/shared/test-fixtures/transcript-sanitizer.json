@@ -1,0 +1,47 @@
+[
+  {
+    "name": "inline square-bracket cough",
+    "input": "I was walking home [cough] when I saw it.",
+    "expected": "I was walking home when I saw it."
+  },
+  {
+    "name": "parenthesized applause before punctuation",
+    "input": "Thanks (applause), everyone.",
+    "expected": "Thanks, everyone."
+  },
+  {
+    "name": "music note annotation",
+    "input": "[♪♪♪] Hello there.",
+    "expected": "Hello there."
+  },
+  {
+    "name": "blank audio only becomes empty",
+    "input": "[BLANK_AUDIO]",
+    "expected": ""
+  },
+  {
+    "name": "no speech and blank audio variants",
+    "input": "(blank audio) [NO_SPEECH] Hello.",
+    "expected": "Hello."
+  },
+  {
+    "name": "preserves intended UI label",
+    "input": "Click [Save] and choose (Advanced).",
+    "expected": "Click [Save] and choose (Advanced)."
+  },
+  {
+    "name": "preserves citation brackets",
+    "input": "See [1] for details.",
+    "expected": "See [1] for details."
+  },
+  {
+    "name": "preserves ordinary spoken words",
+    "input": "The word music is important, and cough is a symptom.",
+    "expected": "The word music is important, and cough is a symptom."
+  },
+  {
+    "name": "does not guess at lyrics after music tag",
+    "input": "[Music] never gonna give you up",
+    "expected": "never gonna give you up"
+  }
+]

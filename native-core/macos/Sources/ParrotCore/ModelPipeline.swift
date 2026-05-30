@@ -14,15 +14,6 @@ struct TranscriptionOutput: Sendable {
 }
 
 actor ModelPipeline {
-    private static let whisperArtifacts: Set<String> = [
-        "[BLANK_AUDIO]",
-        "[NO_SPEECH]",
-        "(blank audio)",
-        "(no speech)",
-        "[MUSIC]",
-        "[APPLAUSE]",
-        "[LAUGHTER]",
-    ]
     private var whisperKits: [SpeechModelKind: WhisperKit] = [:]
     private var loadTasks: [SpeechModelKind: Task<WhisperKit, Error>] = [:]
     private var whisperCppModels: [SpeechModelKind: PersistentWhisperCppSpeechModel] = [:]
@@ -342,6 +333,7 @@ actor ModelPipeline {
         var decodeOptions = DecodingOptions()
         decodeOptions.language = DictationRouting.decodeLanguageCode(for: settings)
         decodeOptions.detectLanguage = DictationRouting.shouldDetectLanguage(for: settings)
+        decodeOptions.suppressBlank = true
 
         let results: [TranscriptionResult] = try await model.transcribe(
             audioArray: samples,
@@ -351,7 +343,7 @@ actor ModelPipeline {
             .map(\.text)
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleaned = Self.removeWhisperArtifacts(from: text)
+        let cleaned = TranscriptSanitizer.stripNonSpeechAnnotations(from: text)
         guard cleaned.isEmpty == false else {
             throw ModelPipelineError.emptyTranscription
         }
@@ -382,7 +374,7 @@ actor ModelPipeline {
             languageCode: DictationRouting.decodeLanguageCode(for: settings),
             detectLanguage: DictationRouting.shouldDetectLanguage(for: settings)
         )
-        let cleaned = Self.removeWhisperArtifacts(from: result.text)
+        let cleaned = TranscriptSanitizer.stripNonSpeechAnnotations(from: result.text)
         guard cleaned.isEmpty == false else {
             throw ModelPipelineError.emptyTranscription
         }
@@ -851,14 +843,6 @@ actor ModelPipeline {
     private static func removeItemIfExists(at url: URL) throws {
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         try FileManager.default.removeItem(at: url)
-    }
-
-    private static func removeWhisperArtifacts(from text: String) -> String {
-        var cleaned = text
-        for artifact in whisperArtifacts {
-            cleaned = cleaned.replacingOccurrences(of: artifact, with: "")
-        }
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func log(_ message: String) {

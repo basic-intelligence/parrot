@@ -425,7 +425,7 @@ impl<A: PlatformAdapter, M: ModelPipeline> CoreService<A, M> {
                 detect_language,
             )
             .await?;
-        let raw = transcription.text.trim().to_string();
+        let raw = parrot_cleanup::strip_non_speech_annotations(&transcription.text);
         if raw.is_empty() {
             return Err(anyhow::anyhow!("Transcription was empty."));
         }
@@ -955,6 +955,35 @@ mod tests {
 
         assert_eq!(result.raw, "hello world");
         assert_eq!(result.cleaned, "hello world");
+    }
+
+    #[tokio::test]
+    async fn shared_service_strips_non_speech_annotations_before_cleanup() {
+        let adapter = FakeAdapter::new(speech_audio());
+        let models = FakePipeline::downloaded();
+        {
+            let mut state = models.state.lock().unwrap();
+            state.transcript.text = "I was walking [cough] home [♪♪♪].".into();
+            state.cleanup_output = "Cleaned text: I was walking home.".into();
+        }
+        let service = service(adapter, models.clone());
+
+        service.start_recording().await.unwrap();
+        let result = service.stop_recording().await.unwrap();
+
+        assert_eq!(result.raw, "I was walking home.");
+        assert_eq!(result.cleaned, "I was walking home.");
+        let cleanup_prompt = models
+            .state
+            .lock()
+            .unwrap()
+            .cleanup_prompt
+            .as_ref()
+            .unwrap()
+            .clone();
+        assert!(cleanup_prompt.contains("I was walking home."));
+        assert!(!cleanup_prompt.contains("[cough]"));
+        assert!(!cleanup_prompt.contains("[♪♪♪]"));
     }
 
     #[tokio::test]

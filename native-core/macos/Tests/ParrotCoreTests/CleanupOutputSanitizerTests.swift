@@ -90,6 +90,18 @@ final class CleanupOutputSanitizerTests: XCTestCase {
             "Today I had a good day."
         )
     }
+
+    func testTranscriptSanitizerSharedFixtures() throws {
+        let fixtures = try SharedResources.decode([CleanupSanitizerFixture].self, relativePath: "test-fixtures/transcript-sanitizer.json")
+
+        for fixture in fixtures {
+            XCTAssertEqual(
+                TranscriptSanitizer.stripNonSpeechAnnotations(from: fixture.input),
+                fixture.expected,
+                fixture.name
+            )
+        }
+    }
 }
 
 private struct CleanupSanitizerFixture: Decodable {

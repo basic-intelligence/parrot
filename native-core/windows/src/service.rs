@@ -270,8 +270,12 @@ impl CoreService {
             let transcription =
                 self.speech
                     .transcribe(&recorded.samples_16khz, &settings, &paths)?;
+            let raw = parrot_cleanup::strip_non_speech_annotations(&transcription.text);
+            if raw.is_empty() {
+                return Err(anyhow::anyhow!("Transcription was empty."));
+            }
             let cleaned = self.cleanup.cleanup(
-                &transcription.text,
+                &raw,
                 &settings,
                 &transcription.language,
                 &paths.cleanup_models_dir,
@@ -279,7 +283,7 @@ impl CoreService {
                 self.debug_cleanup_failures,
             )?;
             serde_json::to_value(RecordingResult {
-                raw: transcription.text.clone(),
+                raw,
                 cleaned,
                 audio_duration_seconds: recorded.duration_seconds,
             })
@@ -768,13 +772,17 @@ impl HotkeyRuntime {
         if cancel_flag.load(Ordering::SeqCst) {
             return Err(anyhow::anyhow!("Recording cancelled."));
         }
+        let raw = parrot_cleanup::strip_non_speech_annotations(&transcription.text);
+        if raw.is_empty() {
+            return Err(anyhow::anyhow!("Transcription was empty."));
+        }
         let cleanup_prompt = self
             .cleanup_prompt
             .lock()
             .expect("hotkey cleanup prompt poisoned")
             .clone();
         let cleaned = cleanup.cleanup_with_cancel(
-            &transcription.text,
+            &raw,
             &settings,
             &transcription.language,
             &paths.cleanup_models_dir,
@@ -783,7 +791,7 @@ impl HotkeyRuntime {
             cancel_flag,
         )?;
         Ok(RecordingResult {
-            raw: transcription.text,
+            raw,
             cleaned,
             audio_duration_seconds: recorded.duration_seconds,
         })
